@@ -22,6 +22,7 @@ public:
 
     PerfSummaryMode SummaryMode() const { return summaryMode_; }
     void SetSummaryMode(PerfSummaryMode mode, bool notifyParent = true);
+    int GetSidebarPreferredWidth() const;
     int GetSidebarPreferredHeight() const;
     RECT GetRightGraphScreenRect() const;
 

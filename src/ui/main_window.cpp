@@ -305,7 +305,7 @@ void MainWindow::InitMonitorsAndTabs() {
 
 void MainWindow::RebuildMenu() {
     if (!hwnd_) return;
-    if (!settings_.moreDetails) {
+    if (!settings_.moreDetails || IsInPerfSummary()) {
         if (hMainMenu_) {
             SetMenu(hwnd_, nullptr);
             DestroyMenu(hMainMenu_);
@@ -631,17 +631,22 @@ void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
             } else {
                 GetWindowRect(hwnd_, &savedPreSummaryRect_);
             }
-            SetMenu(hwnd_, nullptr);
-            LONG_PTR newStyle = (style & ~WS_OVERLAPPEDWINDOW) |
-                                WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS |
-                                WS_SYSMENU | WS_MINIMIZEBOX;
-            SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
+            savedPreSummaryExStyle_ = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
+            style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
         }
+        SetMenu(hwnd_, nullptr);
+        LONG_PTR newStyle = (style & ~(WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_BORDER | WS_DLGFRAME |
+                                       WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
+                            WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+        SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
+        LONG_PTR exStyle = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd_, GWL_EXSTYLE,
+                          exStyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 
         int tx = perfScreenRc.left;
         int ty = perfScreenRc.top;
-        int tw = DpiScale(hwnd_, 210);
-        int th = std::clamp(tabPerf_.GetSidebarPreferredHeight(), DpiScale(hwnd_, 200), DpiScale(hwnd_, 680));
+        int tw = tabPerf_.GetSidebarPreferredWidth();
+        int th = std::clamp(tabPerf_.GetSidebarPreferredHeight(), DpiScale(hwnd_, 170), DpiScale(hwnd_, 680));
         if (mode == PerfSummaryMode::GraphOnly) {
             tx = graphRc.left;
             ty = graphRc.top;
@@ -660,16 +665,33 @@ void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
             ty = std::clamp<int>(ty, mi.rcWork.top, mi.rcWork.bottom - th);
         }
 
+        if (mode == PerfSummaryMode::SidebarOnly) {
+            summaryFixedWidth_ = tw;
+            summaryFixedHeight_ = th;
+        } else {
+            summaryFixedWidth_ = 0;
+            summaryFixedHeight_ = 0;
+        }
+
         SetWindowPos(hwnd_, nullptr, tx, ty, tw, th,
                      SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
         LayoutChildren();
         UpdateMenuChecks();
         RedrawWindow(hwnd_, nullptr, nullptr,
-                     RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+                     RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     } else {
+        summaryFixedWidth_ = 0;
+        summaryFixedHeight_ = 0;
         LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
         LONG_PTR newStyle = (style & ~WS_POPUP) | WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
         SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
+        if (savedPreSummaryExStyle_ != 0) {
+            LONG_PTR restoredEx = settings_.alwaysOnTop
+                ? (savedPreSummaryExStyle_ | WS_EX_TOPMOST)
+                : (savedPreSummaryExStyle_ & ~WS_EX_TOPMOST);
+            SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, restoredEx);
+            savedPreSummaryExStyle_ = 0;
+        }
         RebuildMenu();
 
         if (savedPreSummaryRect_.right > savedPreSummaryRect_.left &&
@@ -687,6 +709,7 @@ void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
             ShowWindow(hwnd_, SW_MAXIMIZE);
             savedPreSummaryMax_ = false;
         }
+        UpdateAlwaysOnTop();
         ApplyCurrentTheme(true);
         LayoutChildren();
         UpdatePrimaryActionButton();
@@ -700,6 +723,7 @@ void MainWindow::ApplyCurrentTheme(bool redrawTabs) {
     ThemeManager& tm = ThemeManager::Instance();
     tm.ApplyTheme(settings_.themeMode);
     tm.ApplyToWindow(hwnd_);
+    UpdateWindowTitle();
 
     simpleLv_.ApplyTheme();
     tabProcesses_.ApplyTheme();
@@ -716,14 +740,20 @@ void MainWindow::ApplyCurrentTheme(bool redrawTabs) {
         LayoutChildren();
         InvalidateRect(hwnd_, nullptr, FALSE);
     }
-    if (!IsInPerfSummary()) DrawMenuBar(hwnd_);
+    if (IsInPerfSummary()) {
+        if (redrawTabs && IsWindowVisible(hwnd_)) {
+            RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+        }
+        return;
+    }
+    DrawMenuBar(hwnd_);
     if (redrawTabs && IsWindowVisible(hwnd_)) {
         // Force Windows 10 DWM to repaint non-client caption bar immediately on theme switch
         // while keeping its real activation state and repainting the menu bar cleanly.
         bool wasActive = (GetForegroundWindow() == hwnd_);
         SendMessageW(hwnd_, WM_NCACTIVATE, wasActive ? FALSE : TRUE, 0);
         SendMessageW(hwnd_, WM_NCACTIVATE, wasActive ? TRUE : FALSE, 0);
-        if (!IsInPerfSummary()) DrawMenuBar(hwnd_);
+        DrawMenuBar(hwnd_);
         RedrawWindow(hwnd_, nullptr, nullptr,
                      RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     }
@@ -775,7 +805,13 @@ void MainWindow::SetUpdateSpeed(UpdateSpeed speed) {
 void MainWindow::UpdateWindowTitle() {
     if (!hwnd_) return;
     const Strings& s = GetStrings(settings_.langMode);
-    SetWindowTextW(hwnd_, IsCurrentProcessElevated() ? s.appTitleAdmin : s.appTitle);
+    const wchar_t* base = IsCurrentProcessElevated() ? s.appTitleAdmin : s.appTitle;
+    bool dark = ThemeManager::Instance().IsDark();
+    bool zh = (GetEffectiveLang(settings_.langMode) == LangMode::Chinese);
+    const wchar_t* suffix = zh ? (dark ? L"  (\x6DF1\x8272)" : L"  (\x6D45\x8272)")
+                               : (dark ? L"  (Dark)" : L"  (Light)");
+    std::wstring fullTitle = std::wstring(base) + suffix;
+    SetWindowTextW(hwnd_, fullTitle.c_str());
 }
 
 void MainWindow::UpdateAlwaysOnTop() {
@@ -1681,7 +1717,7 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
 LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     LRESULT menuRes = 0;
-    if (ThemeManager::Instance().HandleMenuBarMessage(hwnd_, msg, wParam, lParam, menuRes)) {
+    if (!IsInPerfSummary() && ThemeManager::Instance().HandleMenuBarMessage(hwnd_, msg, wParam, lParam, menuRes)) {
         return menuRes;
     }
 
@@ -1704,16 +1740,48 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
 
     case WM_NCCALCSIZE:
-        if (wParam == TRUE && IsInPerfSummary()) {
+        if (IsInPerfSummary()) {
             return 0;
+        }
+        break;
+
+    case WM_NCPAINT:
+        if (IsInPerfSummary()) {
+            return 0;
+        }
+        break;
+
+    case WM_NCACTIVATE:
+        if (IsInPerfSummary()) {
+            return TRUE;
+        }
+        break;
+
+    case WM_SETTEXT:
+    case WM_SETICON:
+        if (IsInPerfSummary()) {
+            LONG_PTR curStyle = GetWindowLongPtrW(hwnd_, GWL_STYLE);
+            if (curStyle & WS_VISIBLE) {
+                SetWindowLongPtrW(hwnd_, GWL_STYLE, curStyle & ~WS_VISIBLE);
+                LRESULT r = DefWindowProcW(hwnd_, msg, wParam, lParam);
+                SetWindowLongPtrW(hwnd_, GWL_STYLE, curStyle);
+                return r;
+            }
         }
         break;
 
     case WM_GETMINMAXINFO: {
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
         if (IsInPerfSummary()) {
-            mmi->ptMinTrackSize.x = DpiScale(hwnd_, 165);
-            mmi->ptMinTrackSize.y = DpiScale(hwnd_, 170);
+            if (perfSummaryMode_ == PerfSummaryMode::SidebarOnly && summaryFixedWidth_ > 0 && summaryFixedHeight_ > 0) {
+                mmi->ptMinTrackSize.x = summaryFixedWidth_;
+                mmi->ptMaxTrackSize.x = summaryFixedWidth_;
+                mmi->ptMinTrackSize.y = summaryFixedHeight_;
+                mmi->ptMaxTrackSize.y = summaryFixedHeight_;
+            } else {
+                mmi->ptMinTrackSize.x = DpiScale(hwnd_, 220);
+                mmi->ptMinTrackSize.y = DpiScale(hwnd_, 170);
+            }
         } else {
             mmi->ptMinTrackSize.x = DpiScale(hwnd_, settings_.moreDetails ? 480 : 340);
             mmi->ptMinTrackSize.y = DpiScale(hwnd_, settings_.moreDetails ? 340 : 260);

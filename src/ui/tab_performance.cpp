@@ -282,6 +282,79 @@ void TabPerformance::SetSummaryMode(PerfSummaryMode mode, bool notifyParent) {
     }
 }
 
+int TabPerformance::GetSidebarPreferredWidth() const {
+    if (!hwnd_) return 256;
+    HDC hdc = GetDC(hwnd_);
+    if (!hdc) return DpiScale(hwnd_, 270);
+
+    ThemeManager& tm = ThemeManager::Instance();
+    int maxTextW = 0;
+    const int titleCap = DpiScale(hwnd_, 180);
+    const int subCap = DpiScale(hwnd_, 175);
+
+    const wchar_t* baselines[] = {
+        L"S: 999 Kbps  R: 999 Kbps",
+        L"S: 99.9 Mbps  R: 99.9 Mbps",
+        L"99.9/99.9 GB (100%)",
+        L"100% 5.99 GHz",
+        L"100% (99 \x00B0C)"
+    };
+    for (const wchar_t* b : baselines) {
+        maxTextW = (std::max)(maxTextW, (std::min)(subCap, tm.MeasureTextWidth(hdc, hwnd_, 9, false, b, -1)));
+    }
+
+    if (perf_ && settings_) {
+        const Strings& s = GetStrings(settings_->langMode);
+        auto considerTitle = [&](const wchar_t* t) {
+            if (t && t[0]) {
+                maxTextW = (std::max)(maxTextW, (std::min)(titleCap, tm.MeasureTextWidth(hdc, hwnd_, 12, false, t, -1)));
+            }
+        };
+        auto considerSub = [&](const wchar_t* t) {
+            if (t && t[0]) {
+                maxTextW = (std::max)(maxTextW, (std::min)(subCap, tm.MeasureTextWidth(hdc, hwnd_, 9, false, t, -1)));
+            }
+        };
+
+        considerTitle(s.perfCpu);
+        considerTitle(s.perfMemory);
+
+        wchar_t buf[128];
+        const auto& c = perf_->Cpu();
+        swprintf_s(buf, L"%.0f%% %.2f GHz", c.utilization, c.currentSpeedGhz);
+        considerSub(buf);
+
+        const auto& m = perf_->Memory();
+        double uGb = static_cast<double>(m.inUseBytes) / (1024.0 * 1024.0 * 1024.0);
+        double tGb = static_cast<double>(m.totalBytes) / (1024.0 * 1024.0 * 1024.0);
+        swprintf_s(buf, L"%.1f/%.1f GB (%.0f%%)", uGb, tGb, m.utilization);
+        considerSub(buf);
+
+        for (const auto& d : perf_->Disks()) {
+            considerTitle(d.title.c_str());
+            considerSub(d.type.c_str());
+        }
+        for (const auto& n : perf_->Networks()) {
+            considerTitle(n.title.c_str());
+            considerSub(n.connType.c_str());
+            swprintf_s(buf, L"S: %s  R: %s",
+                       FormatNetSpeedAuto(n.sendBytesPerSec).c_str(),
+                       FormatNetSpeedAuto(n.recvBytesPerSec).c_str());
+            considerSub(buf);
+        }
+        for (const auto& g : perf_->Gpus()) {
+            considerTitle(g.title.c_str());
+            considerSub(g.name.c_str());
+        }
+    }
+
+    ReleaseDC(hwnd_, hdc);
+
+    int overhead = DpiScale(hwnd_, 6) * 2 + DpiScale(hwnd_, 8) + DpiScale(hwnd_, 72) +
+                   DpiScale(hwnd_, 10) + DpiScale(hwnd_, 12);
+    return std::clamp(overhead + maxTextW, DpiScale(hwnd_, 248), DpiScale(hwnd_, 300));
+}
+
 int TabPerformance::GetSidebarPreferredHeight() const {
     if (!hwnd_) return 420;
     int cardPad = DpiScale(hwnd_, 6);
@@ -682,7 +755,7 @@ void TabPerformance::Paint(HDC hdc, const RECT& clientRc) {
         leftPaneRect_ = { 0, 0, 0, 0 };
         rightPaneRect_ = { 0, 0, totalW, totalH };
     } else {
-        sidebarW = std::clamp(DpiScale(hwnd_, 260), DpiScale(hwnd_, 190), totalW / 3);
+        sidebarW = std::clamp(GetSidebarPreferredWidth(), DpiScale(hwnd_, 220), (std::max)(DpiScale(hwnd_, 220), totalW * 38 / 100));
         leftPaneRect_ = { 0, 0, sidebarW, totalH };
         rightPaneRect_ = { sidebarW + 1, 0, totalW, totalH };
     }

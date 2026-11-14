@@ -135,6 +135,9 @@ private:
     PerfSummaryMode perfSummaryMode_ = PerfSummaryMode::Normal;
     RECT savedPreSummaryRect_{};
     bool savedPreSummaryMax_ = false;
+    int summaryFixedWidth_ = 0;
+    int summaryFixedHeight_ = 0;
+    LONG_PTR savedPreSummaryExStyle_ = 0;
 };
 
 } // namespace taskman
