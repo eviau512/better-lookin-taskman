@@ -1,0 +1,107 @@
+#include <windows.h>
+#include "resource.h"
+#include "build_version.h"
+
+#ifndef IDC_STATIC
+#define IDC_STATIC -1
+#endif
+
+IDI_APP_ICON ICON "taskmgr.ico"
+
+// Embed manifest as RT_MANIFEST resource ID 1
+1 RT_MANIFEST "app.manifest"
+
+IDR_ACCEL ACCELERATORS
+BEGIN
+    VK_TAB,     IDA_TAB_NEXT,           VIRTKEY, CONTROL
+    VK_TAB,     IDA_TAB_PREV,           VIRTKEY, CONTROL, SHIFT
+    VK_F5,      IDM_VIEW_REFRESH_NOW,   VIRTKEY
+    VK_DELETE,  IDA_DELETE_ACTION,      VIRTKEY
+    VK_END,     IDA_END_PROCESS_TREE,   VIRTKEY, CONTROL
+    VK_RETURN,  IDA_PROPERTIES,         VIRTKEY, ALT
+    "D",        IDM_OPT_TOGGLE_THEME,   VIRTKEY, CONTROL, SHIFT
+    "E",        IDA_ALT_E,              VIRTKEY, ALT
+    "D",        IDA_ALT_D,              VIRTKEY, ALT
+    "S",        IDA_ALT_S,              VIRTKEY, ALT
+    "T",        IDA_ALT_T,              VIRTKEY, ALT
+    "O",        IDA_ALT_O,              VIRTKEY, ALT
+    "N",        IDM_FILE_NEW_TASK,      VIRTKEY, ALT
+    VK_ESCAPE,  IDA_ESCAPE,             VIRTKEY
+    VK_F1,      IDM_HELP_TOPICS,        VIRTKEY
+END
+
+IDD_RUN_TASK DIALOGEX 0, 0, 270, 128
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Create new task"
+FONT 9, "Segoe UI"
+BEGIN
+    ICON            IDI_APP_ICON, IDC_STATIC, 12, 12, 20, 20
+    LTEXT           "Type the name of a program, folder, document, or Internet resource, and Windows will open it for you.", IDC_RUN_DESC, 42, 12, 214, 24
+    LTEXT           "&Open:", IDC_RUN_LABEL, 12, 46, 30, 10
+    EDITTEXT        IDC_RUN_EDIT, 46, 44, 210, 14, ES_AUTOHSCROLL
+    CONTROL         "Create this task with administrative privileges.", IDC_RUN_ADMIN_CHK, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 46, 66, 210, 12
+    LTEXT           "", IDC_RUN_ADMIN_HINT, 46, 80, 210, 10
+    DEFPUSHBUTTON   "OK", IDOK, 96, 104, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 151, 104, 50, 14
+    PUSHBUTTON      "&Browse...", IDC_RUN_BROWSE, 206, 104, 50, 14
+END
+
+IDD_AFFINITY DIALOGEX 0, 0, 230, 210
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Processor affinity"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Which processors are allowed to run this process?", IDC_AFFINITY_DESC, 12, 10, 206, 18
+    CONTROL         "<All Processors>", IDC_AFFINITY_ALL, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 12, 32, 206, 12
+    CONTROL         "", IDC_AFFINITY_LIST, "SysListView32", LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP, 12, 48, 206, 132
+    DEFPUSHBUTTON   "OK", IDOK, 114, 188, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 168, 188, 50, 14
+END
+
+IDD_SELECT_COLUMNS DIALOGEX 0, 0, 230, 230
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Select columns"
+FONT 9, "Segoe UI"
+BEGIN
+    LTEXT           "Select the columns that will appear on the page.", IDC_COLS_DESC, 12, 10, 206, 16
+    CONTROL         "", IDC_COLS_LIST, "SysListView32", LVS_REPORT | LVS_NOCOLUMNHEADER | LVS_SINGLESEL | WS_BORDER | WS_TABSTOP, 12, 30, 206, 168
+    DEFPUSHBUTTON   "OK", IDOK, 114, 206, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 168, 206, 50, 14
+END
+
+IDD_ABOUT DIALOGEX 0, 0, 240, 102
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About Task Manager"
+FONT 9, "Segoe UI"
+BEGIN
+    ICON            IDI_APP_ICON, IDC_ABOUT_ICON, 14, 14, 20, 20
+    LTEXT           "", IDC_ABOUT_TEXT, 48, 14, 178, 56
+    DEFPUSHBUTTON   "OK", IDOK, 176, 80, 50, 14
+END
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,0,0,APP_BUILD_NUM
+ PRODUCTVERSION 0,0,0,APP_BUILD_NUM
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Task Manager"
+            VALUE "FileVersion", APP_BUILD_TAG_A
+            VALUE "InternalName", "taskmgr.exe"
+            VALUE "OriginalFilename", "Taskmgr.exe"
+            VALUE "ProductName", "Better Lookin Win10 Task Manager"
+            VALUE "ProductVersion", APP_BUILD_TAG_A
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
