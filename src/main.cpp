@@ -23,12 +23,15 @@ LRESULT CALLBACK DaemonWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
         perf = reinterpret_cast<taskman::PerfMonitor*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(perf));
+        PostMessageW(hwnd, WM_APP + 1, 0, 0);
+        return 0;
+    }
+    case WM_APP + 1:
         if (perf) {
             perf->Init();
         }
         SetTimer(hwnd, 1, 500, nullptr);
         return 0;
-    }
     case WM_TIMER:
         if (wParam == 1 && perf) {
             perf->Sample(0, 0, 0);
@@ -122,6 +125,19 @@ void EnsureDaemonRunningAndRegistered() {
     }
 }
 
+void StopAndUnregisterDaemon() {
+    HKEY hRun = nullptr;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                      0, KEY_SET_VALUE, &hRun) == ERROR_SUCCESS) {
+        RegDeleteValueW(hRun, L"BetterWin10TaskmanDaemon");
+        RegCloseKey(hRun);
+    }
+    HWND hDaemon = FindWindowExW(HWND_MESSAGE, nullptr, kDaemonWndClass, nullptr);
+    if (hDaemon) {
+        PostMessageW(hDaemon, WM_CLOSE, 0, 0);
+    }
+}
+
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
@@ -142,7 +158,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
                        _wcsicmp(argv[i], L"--daemon") == 0) {
                 isDaemon = true;
             } else if ((argv[i][0] == L'/' || argv[i][0] == L'-') &&
-                       argv[i][1] >= L'0' && argv[i][1] <= L'6' && argv[i][2] == L'\0') {
+                       argv[i][1] >= L'0' && argv[i][1] <= L'7' && argv[i][2] == L'\0') {
                 requestedTab = argv[i][1] - L'0';
             }
         }
@@ -151,6 +167,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
 
     if (isDaemon) {
         return RunPerfDaemon(hInstance);
+    }
+
+    // Pin the pure-memory shared performance ring before the previous non-elevated instance
+    // closes so UAC elevation keeps the full curve history with zero disk I/O.
+    HANDLE hElevatedRingHold = nullptr;
+    if (isElevatedRestart) {
+        hElevatedRingHold = CreateFileMappingW(
+            INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+            0, static_cast<DWORD>(sizeof(taskman::SharedPerfRing)),
+            L"Local\\BetterWin10TaskmanPerfRing");
+        HANDLE hElevateReady = OpenEventW(EVENT_MODIFY_STATE, FALSE, L"Local\\BetterWin10TaskmanElevateReady");
+        if (hElevateReady) {
+            SetEvent(hElevateReady);
+            CloseHandle(hElevateReady);
+        }
     }
 
     constexpr wchar_t kMutexName[] = L"Local\\BetterWin10TaskmanSingleInstance";
@@ -177,6 +208,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
             SendMessageW(hExisting, WM_APP_BRING_TO_FRONT, static_cast<WPARAM>(requestedTab), 0);
         }
         CloseHandle(hMutex);
+        if (hElevatedRingHold) CloseHandle(hElevatedRingHold);
         return 0;
     }
 
@@ -195,20 +227,42 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     int exitCode = 0;
     {
         if (!allowMultiple) {
-            EnsureDaemonRunningAndRegistered();
+            taskman::AppSettings initSettings;
+            taskman::LoadSettings(initSettings);
+            if (initSettings.preLaunchSampling) {
+                EnsureDaemonRunningAndRegistered();
+            } else {
+                StopAndUnregisterDaemon();
+            }
         }
         taskman::MainWindow mainWin;
         if (mainWin.Create(nCmdShow, requestedTab)) {
+            if (hElevatedRingHold) {
+                CloseHandle(hElevatedRingHold);
+                hElevatedRingHold = nullptr;
+            }
             HACCEL hAccel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW(IDR_ACCEL));
             MSG msg{};
             while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
-                if (hAccel && TranslateAcceleratorW(mainWin.Hwnd(), hAccel, &msg)) {
+                bool skipAccel = false;
+                if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN) && msg.wParam == VK_DELETE) {
+                    wchar_t cls[32] = {};
+                    if (msg.hwnd && GetClassNameW(msg.hwnd, cls, ARRAYSIZE(cls)) > 0 && _wcsicmp(cls, L"Edit") == 0) {
+                        skipAccel = true;
+                    }
+                }
+                HWND hActive = GetActiveWindow();
+                if (!skipAccel && hAccel && TranslateAcceleratorW(hActive ? hActive : mainWin.Hwnd(), hAccel, &msg)) {
                     continue;
                 }
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
             exitCode = static_cast<int>(msg.wParam);
+        }
+        if (hElevatedRingHold) {
+            CloseHandle(hElevatedRingHold);
+            hElevatedRingHold = nullptr;
         }
     }
 

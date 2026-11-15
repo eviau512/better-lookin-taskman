@@ -146,6 +146,24 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         nullptr, nullptr, hInst, this);
     if (!hwnd_) return false;
 
+    WNDCLASSEXW wcSum{ sizeof(wcSum) };
+    wcSum.style = CS_DBLCLKS;
+    wcSum.lpfnWndProc = SummaryWndProc;
+    wcSum.hInstance = hInst;
+    wcSum.hIcon = wc.hIcon;
+    wcSum.hIconSm = wc.hIconSm;
+    wcSum.hCursor = wc.hCursor;
+    wcSum.hbrBackground = nullptr;
+    wcSum.lpszClassName = kSummaryWndClass;
+    RegisterClassExW(&wcSum);
+
+    hSummaryWnd_ = CreateWindowExW(
+        WS_EX_APPWINDOW | (settings_.alwaysOnTop ? WS_EX_TOPMOST : 0),
+        kSummaryWndClass, title,
+        WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        0, 0, 260, 420,
+        nullptr, nullptr, hInst, this);
+
     ChangeWindowMessageFilterEx(hwnd_, WM_APP_BRING_TO_FRONT, MSGFLT_ALLOW, nullptr);
 
     InitMonitorsAndTabs();
@@ -301,11 +319,17 @@ void MainWindow::InitMonitorsAndTabs() {
         tabServices_.RefreshData(serviceMgr_);
     };
     tabServices_.onColumnsChanged = [this]() { SaveSettings(settings_); };
+
+    tabLocks_.Create(hwnd_, &settings_, &procMon_);
+    tabLocks_.onGoToDetails = [this](DWORD pid) { NavigateToDetails(pid); };
+    tabLocks_.onSelectionChanged = [this]() { UpdatePrimaryActionButton(); };
+    tabLocks_.onColumnsChanged = [this]() { SaveSettings(settings_); };
+    tabLocks_.onElevateRequested = [this]() { HandleCommand(IDM_FILE_ELEVATE); };
 }
 
 void MainWindow::RebuildMenu() {
     if (!hwnd_) return;
-    if (!settings_.moreDetails || IsInPerfSummary()) {
+    if (!settings_.moreDetails) {
         if (hMainMenu_) {
             SetMenu(hwnd_, nullptr);
             DestroyMenu(hMainMenu_);
@@ -332,6 +356,7 @@ void MainWindow::RebuildMenu() {
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_HIDE_WHEN_MINIMIZED, s.menuHideWhenMinimized);
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_SHOW_FULL_ACCOUNT, s.menuShowFullAccount);
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_SHOW_ALL_HISTORY, s.menuShowAllHistory);
+    AppendMenuW(hOpt, MF_STRING, IDM_OPT_PRELAUNCH_SAMPLING, s.menuPreLaunchSampling);
     AppendMenuW(hOpt, MF_SEPARATOR, 0, nullptr);
 
     HMENU hTheme = CreatePopupMenu();
@@ -346,6 +371,13 @@ void MainWindow::RebuildMenu() {
     AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_AUTO, s.menuLangAuto);
     AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_EN, s.menuLangEn);
     AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_ZH, s.menuLangZh);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_ZHTW, s.menuLangZhTw);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_JA, s.menuLangJa);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_KO, s.menuLangKo);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_DE, s.menuLangDe);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_FR, s.menuLangFr);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_ES, s.menuLangEs);
+    AppendMenuW(hLang, MF_STRING, IDM_OPT_LANG_RU, s.menuLangRu);
     AppendMenuW(hOpt, MF_POPUP, reinterpret_cast<UINT_PTR>(hLang), s.menuLanguage);
 
     AppendMenuW(hRoot, MF_POPUP, reinterpret_cast<UINT_PTR>(hOpt), s.menuOptions);
@@ -391,6 +423,7 @@ void MainWindow::UpdateMenuChecks() {
     checkItem(IDM_OPT_HIDE_WHEN_MINIMIZED, settings_.hideWhenMinimized);
     checkItem(IDM_OPT_SHOW_FULL_ACCOUNT, settings_.showFullAccountName);
     checkItem(IDM_OPT_SHOW_ALL_HISTORY, settings_.showAllHistory);
+    checkItem(IDM_OPT_PRELAUNCH_SAMPLING, settings_.preLaunchSampling);
 
     checkItem(IDM_OPT_THEME_SYSTEM, settings_.themeMode == ThemeMode::System);
     checkItem(IDM_OPT_THEME_LIGHT, settings_.themeMode == ThemeMode::Light);
@@ -399,6 +432,13 @@ void MainWindow::UpdateMenuChecks() {
     checkItem(IDM_OPT_LANG_AUTO, settings_.langMode == LangMode::Auto);
     checkItem(IDM_OPT_LANG_EN, settings_.langMode == LangMode::English);
     checkItem(IDM_OPT_LANG_ZH, settings_.langMode == LangMode::Chinese);
+    checkItem(IDM_OPT_LANG_ZHTW, settings_.langMode == LangMode::TraditionalChinese);
+    checkItem(IDM_OPT_LANG_JA, settings_.langMode == LangMode::Japanese);
+    checkItem(IDM_OPT_LANG_KO, settings_.langMode == LangMode::Korean);
+    checkItem(IDM_OPT_LANG_DE, settings_.langMode == LangMode::German);
+    checkItem(IDM_OPT_LANG_FR, settings_.langMode == LangMode::French);
+    checkItem(IDM_OPT_LANG_ES, settings_.langMode == LangMode::Spanish);
+    checkItem(IDM_OPT_LANG_RU, settings_.langMode == LangMode::Russian);
 
     checkItem(IDM_VIEW_SPEED_HIGH, settings_.updateSpeed == UpdateSpeed::High);
     checkItem(IDM_VIEW_SPEED_NORMAL, settings_.updateSpeed == UpdateSpeed::Normal);
@@ -427,9 +467,11 @@ void MainWindow::LayoutChildren() {
     int h = rc.bottom - rc.top;
 
     if (settings_.moreDetails && settings_.activeTab == 1 && IsInPerfSummary()) {
+        RECT sumRc{};
+        GetClientRect(hSummaryWnd_ ? hSummaryWnd_ : hwnd_, &sumRc);
         tabStripRect_ = { 0, 0, 0, 0 };
-        contentRect_ = { 0, 0, w, h };
-        footerRect_ = { 0, h, w, h };
+        contentRect_ = { 0, 0, sumRc.right - sumRc.left, sumRc.bottom - sumRc.top };
+        footerRect_ = { 0, contentRect_.bottom, contentRect_.right, contentRect_.bottom };
         if (hBtnMore_ && IsWindowVisible(hBtnMore_)) ShowWindow(hBtnMore_, SW_HIDE);
         if (hBtnAction_ && IsWindowVisible(hBtnAction_)) ShowWindow(hBtnAction_, SW_HIDE);
         tabPerf_.Resize(contentRect_);
@@ -450,10 +492,7 @@ void MainWindow::LayoutChildren() {
         auto& tm = ThemeManager::Instance();
         HDC hdc = GetDC(hwnd_);
 
-        const wchar_t* themeTxt = tm.IsDark() ? L"Dark" : L"Light";
-        if (GetEffectiveLang(settings_.langMode) == LangMode::Chinese) {
-            themeTxt = tm.IsDark() ? L"\x6DF1\x8272" : L"\x6D45\x8272";
-        }
+        const wchar_t* themeTxt = tm.IsDark() ? s.themeDarkLabel : s.themeLightLabel;
         int pillW = tm.MeasureTextWidth(hdc, hwnd_, 10, false, themeTxt) + DpiScale(hwnd_, 32);
         int pillPad = DpiScale(hwnd_, 8);
         int pillV = DpiScale(hwnd_, 3);
@@ -461,7 +500,7 @@ void MainWindow::LayoutChildren() {
 
         const wchar_t* tabLabels[kTabCount] = {
             s.tabProcesses, s.tabPerformance, s.tabAppHistory,
-            s.tabStartup, s.tabUsers, s.tabDetails, s.tabServices
+            s.tabStartup, s.tabUsers, s.tabDetails, s.tabServices, s.tabLocks
         };
         int curX = DpiScale(hwnd_, 4);
         int maxTabsRight = themeBtnRect_.left - DpiScale(hwnd_, 6);
@@ -485,6 +524,7 @@ void MainWindow::LayoutChildren() {
         tabUsers_.Resize(contentRect_);
         tabDetails_.Resize(contentRect_);
         tabServices_.Resize(contentRect_);
+        tabLocks_.Resize(contentRect_);
     } else {
         if (hListSimple_) {
             MoveWindow(hListSimple_, contentRect_.left, contentRect_.top,
@@ -535,6 +575,7 @@ void MainWindow::SwitchTab(int tabIdx) {
     tabUsers_.Show(detail && tabIdx == 4);
     tabDetails_.Show(detail && tabIdx == 5);
     tabServices_.Show(detail && tabIdx == 6);
+    tabLocks_.Show(detail && tabIdx == 7);
 
     if (detail) {
         RefreshActiveView(true, 15000);
@@ -547,6 +588,7 @@ void MainWindow::SwitchTab(int tabIdx) {
         case 4: targetFocus = tabUsers_.Hwnd(); break;
         case 5: targetFocus = tabDetails_.Hwnd(); break;
         case 6: targetFocus = tabServices_.Hwnd(); break;
+        case 7: targetFocus = tabLocks_.Hwnd(); break;
         }
         if (targetFocus && IsWindowVisible(targetFocus)) SetFocus(targetFocus);
     } else {
@@ -601,6 +643,7 @@ void MainWindow::ToggleMoreDetails() {
 void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
     if (!hwnd_) return;
     if (perfSummaryMode_ == mode) return;
+    const PerfSummaryMode prevMode = perfSummaryMode_;
     perfSummaryMode_ = mode;
 
     const bool entering = (mode != PerfSummaryMode::Normal);
@@ -615,33 +658,21 @@ void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
     tabPerf_.SetSummaryMode(mode, false);
     settings_.summaryView = entering;
 
-    if (entering) {
+    if (entering && hSummaryWnd_) {
         if (!settings_.moreDetails) settings_.moreDetails = true;
         if (settings_.activeTab != 1) SwitchTab(1);
 
-        LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
-        if ((style & WS_CAPTION) != 0) {
+        if (prevMode == PerfSummaryMode::Normal) {
             savedPreSummaryMax_ = (IsZoomed(hwnd_) != FALSE);
             if (savedPreSummaryMax_) {
                 WINDOWPLACEMENT wp{ sizeof(wp) };
                 if (GetWindowPlacement(hwnd_, &wp)) {
                     savedPreSummaryRect_ = wp.rcNormalPosition;
                 }
-                ShowWindow(hwnd_, SW_RESTORE);
             } else {
                 GetWindowRect(hwnd_, &savedPreSummaryRect_);
             }
-            savedPreSummaryExStyle_ = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-            style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
         }
-        SetMenu(hwnd_, nullptr);
-        LONG_PTR newStyle = (style & ~(WS_OVERLAPPEDWINDOW | WS_CAPTION | WS_BORDER | WS_DLGFRAME |
-                                       WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX)) |
-                            WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-        SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
-        LONG_PTR exStyle = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
-        SetWindowLongPtrW(hwnd_, GWL_EXSTYLE,
-                          exStyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
 
         int tx = perfScreenRc.left;
         int ty = perfScreenRc.top;
@@ -673,47 +704,34 @@ void MainWindow::SetPerfSummaryMode(PerfSummaryMode mode) {
             summaryFixedHeight_ = 0;
         }
 
-        SetWindowPos(hwnd_, nullptr, tx, ty, tw, th,
-                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        LayoutChildren();
+        SetParent(tabPerf_.Hwnd(), hSummaryWnd_);
+        SetWindowPos(hSummaryWnd_, settings_.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+                     tx, ty, tw, th, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        RECT sRc{ 0, 0, tw, th };
+        tabPerf_.Resize(sRc);
+        tabPerf_.Show(true);
+        ShowWindow(hwnd_, SW_HIDE);
         UpdateMenuChecks();
-        RedrawWindow(hwnd_, nullptr, nullptr,
-                     RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+        SetForegroundWindow(hSummaryWnd_);
+        SetFocus(tabPerf_.Hwnd());
+        RedrawWindow(hSummaryWnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     } else {
         summaryFixedWidth_ = 0;
         summaryFixedHeight_ = 0;
-        LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
-        LONG_PTR newStyle = (style & ~WS_POPUP) | WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-        SetWindowLongPtrW(hwnd_, GWL_STYLE, newStyle);
-        if (savedPreSummaryExStyle_ != 0) {
-            LONG_PTR restoredEx = settings_.alwaysOnTop
-                ? (savedPreSummaryExStyle_ | WS_EX_TOPMOST)
-                : (savedPreSummaryExStyle_ & ~WS_EX_TOPMOST);
-            SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, restoredEx);
-            savedPreSummaryExStyle_ = 0;
+        if (tabPerf_.Hwnd() && hSummaryWnd_ && GetParent(tabPerf_.Hwnd()) == hSummaryWnd_) {
+            SetParent(tabPerf_.Hwnd(), hwnd_);
         }
-        RebuildMenu();
-
-        if (savedPreSummaryRect_.right > savedPreSummaryRect_.left &&
-            savedPreSummaryRect_.bottom > savedPreSummaryRect_.top) {
-            SetWindowPos(hwnd_, nullptr,
-                         savedPreSummaryRect_.left, savedPreSummaryRect_.top,
-                         savedPreSummaryRect_.right - savedPreSummaryRect_.left,
-                         savedPreSummaryRect_.bottom - savedPreSummaryRect_.top,
-                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-        } else {
-            SetWindowPos(hwnd_, nullptr, 0, 0, DpiScale(hwnd_, 1020), DpiScale(hwnd_, 700),
-                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        if (hSummaryWnd_) {
+            ShowWindow(hSummaryWnd_, SW_HIDE);
         }
-        if (savedPreSummaryMax_) {
-            ShowWindow(hwnd_, SW_MAXIMIZE);
-            savedPreSummaryMax_ = false;
-        }
-        UpdateAlwaysOnTop();
+        ShowWindow(hwnd_, savedPreSummaryMax_ ? SW_SHOWMAXIMIZED : SW_SHOW);
+        savedPreSummaryMax_ = false;
+        SetForegroundWindow(hwnd_);
         ApplyCurrentTheme(true);
         LayoutChildren();
         UpdatePrimaryActionButton();
         UpdateMenuChecks();
+        SetFocus(tabPerf_.Hwnd());
         RedrawWindow(hwnd_, nullptr, nullptr,
                      RDW_FRAME | RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
     }
@@ -733,6 +751,7 @@ void MainWindow::ApplyCurrentTheme(bool redrawTabs) {
     tabUsers_.ApplyTheme();
     tabDetails_.ApplyTheme();
     tabServices_.ApplyTheme();
+    tabLocks_.ApplyTheme();
 
     if (hBtnMore_) InvalidateRect(hBtnMore_, nullptr, FALSE);
     if (hBtnAction_) InvalidateRect(hBtnAction_, nullptr, FALSE);
@@ -741,8 +760,8 @@ void MainWindow::ApplyCurrentTheme(bool redrawTabs) {
         InvalidateRect(hwnd_, nullptr, FALSE);
     }
     if (IsInPerfSummary()) {
-        if (redrawTabs && IsWindowVisible(hwnd_)) {
-            RedrawWindow(hwnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+        if (redrawTabs && hSummaryWnd_ && IsWindowVisible(hSummaryWnd_)) {
+            RedrawWindow(hSummaryWnd_, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
         }
         return;
     }
@@ -776,6 +795,7 @@ void MainWindow::SetLanguageMode(LangMode mode) {
     tabUsers_.RebuildColumns();
     tabDetails_.RebuildColumns();
     tabServices_.RebuildColumns();
+    tabLocks_.RebuildColumns();
     LayoutChildren();
     RefreshAll(true);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -807,18 +827,58 @@ void MainWindow::UpdateWindowTitle() {
     const Strings& s = GetStrings(settings_.langMode);
     const wchar_t* base = IsCurrentProcessElevated() ? s.appTitleAdmin : s.appTitle;
     bool dark = ThemeManager::Instance().IsDark();
-    bool zh = (GetEffectiveLang(settings_.langMode) == LangMode::Chinese);
-    const wchar_t* suffix = zh ? (dark ? L"  (\x6DF1\x8272)" : L"  (\x6D45\x8272)")
-                               : (dark ? L"  (Dark)" : L"  (Light)");
-    std::wstring fullTitle = std::wstring(base) + suffix;
+    std::wstring fullTitle = std::wstring(base) + L"  (" + (dark ? s.themeDarkLabel : s.themeLightLabel) + L")";
     SetWindowTextW(hwnd_, fullTitle.c_str());
+    if (hSummaryWnd_) SetWindowTextW(hSummaryWnd_, fullTitle.c_str());
 }
 
 void MainWindow::UpdateAlwaysOnTop() {
     if (!hwnd_) return;
-    SetWindowPos(hwnd_, settings_.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
-                 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    HWND zOrder = settings_.alwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST;
+    SetWindowPos(hwnd_, zOrder, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    if (hSummaryWnd_) {
+        SetWindowPos(hSummaryWnd_, zOrder, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
     UpdateMenuChecks();
+}
+
+void MainWindow::SyncPreLaunchDaemon() {
+    if (settings_.preLaunchSampling) {
+        wchar_t exePath[MAX_PATH] = {};
+        DWORD len = GetModuleFileNameW(nullptr, exePath, ARRAYSIZE(exePath));
+        if (len > 0 && len < ARRAYSIZE(exePath)) {
+            std::wstring cmd = std::wstring(L"\"") + exePath + L"\" /daemon";
+            HKEY hRun = nullptr;
+            if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                              0, KEY_READ | KEY_WRITE, &hRun) == ERROR_SUCCESS) {
+                RegSetValueExW(hRun, L"BetterWin10TaskmanDaemon", 0, REG_SZ,
+                               reinterpret_cast<const BYTE*>(cmd.c_str()),
+                               static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
+                RegCloseKey(hRun);
+            }
+            if (FindWindowExW(HWND_MESSAGE, nullptr, L"BetterWin10TaskmanDaemonWnd", nullptr) == nullptr) {
+                STARTUPINFOW si{ sizeof(si) };
+                PROCESS_INFORMATION pi{};
+                std::wstring mutableCmd = cmd;
+                if (CreateProcessW(exePath, &mutableCmd[0], nullptr, nullptr, FALSE,
+                                   CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                }
+            }
+        }
+    } else {
+        HKEY hRun = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                          0, KEY_SET_VALUE, &hRun) == ERROR_SUCCESS) {
+            RegDeleteValueW(hRun, L"BetterWin10TaskmanDaemon");
+            RegCloseKey(hRun);
+        }
+        HWND hDaemon = FindWindowExW(HWND_MESSAGE, nullptr, L"BetterWin10TaskmanDaemonWnd", nullptr);
+        if (hDaemon) {
+            PostMessageW(hDaemon, WM_CLOSE, 0, 0);
+        }
+    }
 }
 
 void MainWindow::UpdatePrimaryActionButton() {
@@ -878,6 +938,10 @@ void MainWindow::UpdatePrimaryActionButton() {
             enableBtn = true;
             label = s.btnOpenServices;
             break;
+        case 7:
+            enableBtn = tabLocks_.HasKillableSelection();
+            label = s.btnEndTask;
+            break;
         }
     }
 
@@ -904,6 +968,7 @@ void MainWindow::SaveAllTabColumnWidths() {
     tabUsers_.SaveColumnWidths();
     tabDetails_.SaveColumnWidths();
     tabServices_.SaveColumnWidths();
+    tabLocks_.SaveColumnWidths();
 }
 
 void MainWindow::RefreshAll(bool force) {
@@ -1181,15 +1246,21 @@ void MainWindow::ShowTrayContextMenu() {
     AppendMenuW(hMenu, MF_STRING, IDM_TRAY_EXIT, s.menuExit);
     SetMenuDefaultItem(hMenu, IDM_TRAY_RESTORE, FALSE);
 
-    SetForegroundWindow(hwnd_);
-    UINT cmd = TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD, pt.x, pt.y, 0, hwnd_, nullptr);
-    PostMessageW(hwnd_, WM_NULL, 0, 0);
+    HWND hOwner = (IsInPerfSummary() && hSummaryWnd_) ? hSummaryWnd_ : hwnd_;
+    SetForegroundWindow(hOwner);
+    UINT cmd = TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD, pt.x, pt.y, 0, hOwner, nullptr);
+    PostMessageW(hOwner, WM_NULL, 0, 0);
     DestroyMenu(hMenu);
 
     switch (cmd) {
     case IDM_TRAY_RESTORE:
-        ShowWindow(hwnd_, SW_RESTORE);
-        SetForegroundWindow(hwnd_);
+        if (IsInPerfSummary() && hSummaryWnd_) {
+            ShowWindow(hSummaryWnd_, SW_SHOW);
+            SetForegroundWindow(hSummaryWnd_);
+        } else {
+            ShowWindow(hwnd_, SW_RESTORE);
+            SetForegroundWindow(hwnd_);
+        }
         break;
     case IDM_TRAY_ALWAYS_ON_TOP:
         settings_.alwaysOnTop = !settings_.alwaysOnTop;
@@ -1239,7 +1310,7 @@ void MainWindow::DrawTabStrip(HDC hdc, const ThemePalette& pal, const Strings& s
     int tabH = tabStripRect_.bottom;
     const wchar_t* tabLabels[kTabCount] = {
         s.tabProcesses, s.tabPerformance, s.tabAppHistory,
-        s.tabStartup, s.tabUsers, s.tabDetails, s.tabServices
+        s.tabStartup, s.tabUsers, s.tabDetails, s.tabServices, s.tabLocks
     };
 
     // Baseline separator under inactive tabs
@@ -1341,10 +1412,7 @@ void MainWindow::DrawTabStrip(HDC hdc, const ThemePalette& pal, const Strings& s
             }
         }
 
-        const wchar_t* themeTxt = pal.isDark ? L"Dark" : L"Light";
-        if (GetEffectiveLang(settings_.langMode) == LangMode::Chinese) {
-            themeTxt = pal.isDark ? L"\x6DF1\x8272" : L"\x6D45\x8272";
-        }
+        const wchar_t* themeTxt = pal.isDark ? s.themeDarkLabel : s.themeLightLabel;
         RECT rcLbl{ ix + iconSz + DpiScale(hwnd_, 5), themeBtnRect_.top, themeBtnRect_.right - DpiScale(hwnd_, 6), themeBtnRect_.bottom };
         tm.DrawModernText(hdc, hwnd_, 10, false, themeTxt, rcLbl,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX, pal.textPrimary);
@@ -1528,6 +1596,7 @@ void MainWindow::HandleCommand(UINT id) {
             case 4: tabUsers_.DisconnectSelected(); break;
             case 5: tabDetails_.EndSelectedTask(); break;
             case 6: tabServices_.OpenServicesMsc(); break;
+            case 7: tabLocks_.EndSelectedLockingProcess(); break;
             }
         }
         break;
@@ -1536,11 +1605,19 @@ void MainWindow::HandleCommand(UINT id) {
     case IDM_FILE_NEW_TASK:
         ShowRunNewTaskDialog(hwnd_, settings_);
         break;
-    case IDM_FILE_ELEVATE:
+    case IDM_FILE_ELEVATE: {
+        HANDLE hElevateReady = CreateEventW(nullptr, TRUE, FALSE, L"Local\\BetterWin10TaskmanElevateReady");
+        if (hElevateReady) ResetEvent(hElevateReady);
         if (RestartCurrentProcessAsAdmin(hwnd_)) {
+            if (hElevateReady) {
+                // Hold the pure-memory shared ring open until the elevated process maps it.
+                WaitForSingleObject(hElevateReady, 3000);
+            }
             PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         }
+        if (hElevateReady) CloseHandle(hElevateReady);
         break;
+    }
     case IDM_FILE_EXIT:
         PostMessageW(hwnd_, WM_CLOSE, 0, 0);
         break;
@@ -1568,6 +1645,12 @@ void MainWindow::HandleCommand(UINT id) {
         UpdateMenuChecks();
         if (settings_.activeTab == 2) tabAppHistory_.RefreshData(appHistory_);
         break;
+    case IDM_OPT_PRELAUNCH_SAMPLING:
+        settings_.preLaunchSampling = !settings_.preLaunchSampling;
+        SyncPreLaunchDaemon();
+        SaveSettings(settings_);
+        UpdateMenuChecks();
+        break;
 
     case IDM_OPT_THEME_SYSTEM:
         settings_.themeMode = ThemeMode::System;
@@ -1591,6 +1674,13 @@ void MainWindow::HandleCommand(UINT id) {
     case IDM_OPT_LANG_AUTO: SetLanguageMode(LangMode::Auto); break;
     case IDM_OPT_LANG_EN:   SetLanguageMode(LangMode::English); break;
     case IDM_OPT_LANG_ZH:   SetLanguageMode(LangMode::Chinese); break;
+    case IDM_OPT_LANG_ZHTW: SetLanguageMode(LangMode::TraditionalChinese); break;
+    case IDM_OPT_LANG_JA:   SetLanguageMode(LangMode::Japanese); break;
+    case IDM_OPT_LANG_KO:   SetLanguageMode(LangMode::Korean); break;
+    case IDM_OPT_LANG_DE:   SetLanguageMode(LangMode::German); break;
+    case IDM_OPT_LANG_FR:   SetLanguageMode(LangMode::French); break;
+    case IDM_OPT_LANG_ES:   SetLanguageMode(LangMode::Spanish); break;
+    case IDM_OPT_LANG_RU:   SetLanguageMode(LangMode::Russian); break;
 
     // View
     case IDM_VIEW_REFRESH_NOW:
@@ -1666,7 +1756,7 @@ void MainWindow::HandleCommand(UINT id) {
         break;
     case IDA_ALT_E:
         if (!settings_.moreDetails) HandleCommand(IDC_BTN_PRIMARY_ACTION);
-        else if (settings_.activeTab == 0 || settings_.activeTab == 5) HandleCommand(IDC_BTN_PRIMARY_ACTION);
+        else if (settings_.activeTab == 0 || settings_.activeTab == 5 || settings_.activeTab == 7) HandleCommand(IDC_BTN_PRIMARY_ACTION);
         else if (settings_.activeTab == 3 && tabStartup_.HasSelection()) tabStartup_.SetSelectedEnabled(true);
         break;
     case IDA_ALT_D:
@@ -1715,9 +1805,60 @@ LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+LRESULT CALLBACK MainWindow::SummaryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    if (msg == WM_NCCREATE) {
+        auto cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
+        self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+    }
+    if (self) {
+        switch (msg) {
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_SIZE:
+            if (wParam != SIZE_MINIMIZED && self->IsInPerfSummary()) {
+                RECT rc{ 0, 0, LOWORD(lParam), HIWORD(lParam) };
+                self->tabPerf_.Resize(rc);
+            }
+            return 0;
+        case WM_GETMINMAXINFO: {
+            auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+            if (self->perfSummaryMode_ == PerfSummaryMode::SidebarOnly &&
+                self->summaryFixedWidth_ > 0 && self->summaryFixedHeight_ > 0) {
+                mmi->ptMinTrackSize.x = self->summaryFixedWidth_;
+                mmi->ptMaxTrackSize.x = self->summaryFixedWidth_;
+                mmi->ptMinTrackSize.y = self->summaryFixedHeight_;
+                mmi->ptMaxTrackSize.y = self->summaryFixedHeight_;
+            } else {
+                mmi->ptMinTrackSize.x = DpiScale(hwnd, 220);
+                mmi->ptMinTrackSize.y = DpiScale(hwnd, 170);
+            }
+            return 0;
+        }
+        case WM_KEYDOWN:
+            if (wParam == VK_ESCAPE) {
+                self->SetPerfSummaryMode(PerfSummaryMode::Normal);
+                return 0;
+            }
+            break;
+        case WM_COMMAND:
+            self->HandleCommand(LOWORD(wParam));
+            return 0;
+        case WM_CLOSE:
+            if (self->hwnd_) PostMessageW(self->hwnd_, WM_CLOSE, 0, 0);
+            return 0;
+        case WM_NCDESTROY:
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            break;
+        }
+    }
+    return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
 LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     LRESULT menuRes = 0;
-    if (!IsInPerfSummary() && ThemeManager::Instance().HandleMenuBarMessage(hwnd_, msg, wParam, lParam, menuRes)) {
+    if (ThemeManager::Instance().HandleMenuBarMessage(hwnd_, msg, wParam, lParam, menuRes)) {
         return menuRes;
     }
 
@@ -1739,53 +1880,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         InvalidateRect(hwnd_, nullptr, FALSE);
         return 0;
 
-    case WM_NCCALCSIZE:
-        if (IsInPerfSummary()) {
-            return 0;
-        }
-        break;
-
-    case WM_NCPAINT:
-        if (IsInPerfSummary()) {
-            return 0;
-        }
-        break;
-
-    case WM_NCACTIVATE:
-        if (IsInPerfSummary()) {
-            return TRUE;
-        }
-        break;
-
-    case WM_SETTEXT:
-    case WM_SETICON:
-        if (IsInPerfSummary()) {
-            LONG_PTR curStyle = GetWindowLongPtrW(hwnd_, GWL_STYLE);
-            if (curStyle & WS_VISIBLE) {
-                SetWindowLongPtrW(hwnd_, GWL_STYLE, curStyle & ~WS_VISIBLE);
-                LRESULT r = DefWindowProcW(hwnd_, msg, wParam, lParam);
-                SetWindowLongPtrW(hwnd_, GWL_STYLE, curStyle);
-                return r;
-            }
-        }
-        break;
-
     case WM_GETMINMAXINFO: {
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
-        if (IsInPerfSummary()) {
-            if (perfSummaryMode_ == PerfSummaryMode::SidebarOnly && summaryFixedWidth_ > 0 && summaryFixedHeight_ > 0) {
-                mmi->ptMinTrackSize.x = summaryFixedWidth_;
-                mmi->ptMaxTrackSize.x = summaryFixedWidth_;
-                mmi->ptMinTrackSize.y = summaryFixedHeight_;
-                mmi->ptMaxTrackSize.y = summaryFixedHeight_;
-            } else {
-                mmi->ptMinTrackSize.x = DpiScale(hwnd_, 220);
-                mmi->ptMinTrackSize.y = DpiScale(hwnd_, 170);
-            }
-        } else {
-            mmi->ptMinTrackSize.x = DpiScale(hwnd_, settings_.moreDetails ? 480 : 340);
-            mmi->ptMinTrackSize.y = DpiScale(hwnd_, settings_.moreDetails ? 340 : 260);
-        }
+        mmi->ptMinTrackSize.x = DpiScale(hwnd_, settings_.moreDetails ? 480 : 340);
+        mmi->ptMinTrackSize.y = DpiScale(hwnd_, settings_.moreDetails ? 340 : 260);
         return 0;
     }
 
@@ -1974,6 +2072,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         tabUsers_.RebuildColumns();
         tabDetails_.RebuildColumns();
         tabServices_.RebuildColumns();
+        tabLocks_.RebuildColumns();
         LayoutChildren();
         return 0;
     }
@@ -1981,8 +2080,13 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_APP_TRAY: {
         UINT mouseMsg = LOWORD(lParam);
         if (mouseMsg == WM_LBUTTONUP || mouseMsg == WM_LBUTTONDBLCLK) {
-            ShowWindow(hwnd_, SW_RESTORE);
-            SetForegroundWindow(hwnd_);
+            if (IsInPerfSummary() && hSummaryWnd_) {
+                ShowWindow(hSummaryWnd_, SW_SHOW);
+                SetForegroundWindow(hSummaryWnd_);
+            } else {
+                ShowWindow(hwnd_, SW_RESTORE);
+                SetForegroundWindow(hwnd_);
+            }
         } else if (mouseMsg == WM_RBUTTONUP || mouseMsg == WM_CONTEXTMENU) {
             ShowTrayContextMenu();
         }
@@ -1990,10 +2094,19 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_APP_BRING_TO_FRONT: {
+        int reqTab = static_cast<int>(wParam);
+        if (IsInPerfSummary()) {
+            if (reqTab >= 0 && reqTab < kTabCount && reqTab != 1) {
+                SetPerfSummaryMode(PerfSummaryMode::Normal);
+            } else if (hSummaryWnd_) {
+                ShowWindow(hSummaryWnd_, SW_SHOW);
+                SetForegroundWindow(hSummaryWnd_);
+                return 0;
+            }
+        }
         if (!IsWindowVisible(hwnd_)) ShowWindow(hwnd_, SW_SHOW);
         if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
         SetForegroundWindow(hwnd_);
-        int reqTab = static_cast<int>(wParam);
         if (reqTab >= 0 && reqTab < kTabCount) {
             if (!settings_.moreDetails) ToggleMoreDetails();
             SwitchTab(reqTab);
@@ -2052,6 +2165,16 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         settings_.summaryView = false;
         SaveAllTabColumnWidths();
         SaveSettings(settings_);
+        if (!settings_.preLaunchSampling) {
+            SyncPreLaunchDaemon();
+        }
+        if (tabPerf_.Hwnd() && hSummaryWnd_ && GetParent(tabPerf_.Hwnd()) == hSummaryWnd_) {
+            SetParent(tabPerf_.Hwnd(), hwnd_);
+        }
+        if (hSummaryWnd_) {
+            DestroyWindow(hSummaryWnd_);
+            hSummaryWnd_ = nullptr;
+        }
         DestroyTrayIcon();
         DestroyWindow(hwnd_);
         return 0;
@@ -2065,6 +2188,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         tabUsers_.Destroy();
         tabDetails_.Destroy();
         tabServices_.Destroy();
+        tabLocks_.Destroy();
         appHistory_.Shutdown();
         perfMon_.Shutdown();
         procMon_.Stop();

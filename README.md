@@ -16,11 +16,11 @@ This is very much a work-in-progress hobby/learning project and makes **no claim
 
 ### Current Capabilities
 - **Light / Dark / Follow System Theme**: Instant switching via `Ctrl+Shift+D`, **Options → Theme**, or the top-right tab bar pill (including DWM dark caption and custom-drawn menus/tables/charts). The window title shows the active theme mode (`(Dark)` / `(Light)`).
-- **Bilingual UI (English / 简体中文)**: Auto-follows Windows display language or switches manually under **Options → Language**.
-- **7 Classic Tabs + Fewer Details Mode**: Processes, Performance (CPU, Memory, Disk, Network with public Global IPv6 preference, GPU), App history (SRUM-backed where available), Startup (including UWP tasks), Users, Details, and Services.
+- **Multi-Language UI (9 Languages + Auto)**: Supports **English**, **简体中文**, **繁體中文**, **日本語**, **한국어**, **Deutsch**, **Français**, **Español**, and **Русский**, auto-following the Windows display language or switching manually under **Options → Language**.
+- **8 Tabs + Fewer Details Mode**: Processes, Performance (CPU, Memory, Disk, Network with public Global IPv6 preference, GPU), App history (SRUM-backed where available), Startup (including UWP tasks), Users, Details, Services, and **Lock Check** (drag-and-drop/drive locking process detection, protected OS core process guard, and NTFS owner/delete permission diagnosis).
 - **Small Experimental Additions**:
   - **Display Time Span Resampling (`30s` / `60s` / `4m`)**: Maintains a `500ms` 4-minute ring buffer so switching speed/span immediately redraws past utilization curves.
-  - **Optional Pre-launch Background Sampling (`/daemon`)**: Shares a lightweight ring buffer (`%APPDATA%\BetterWin10Taskman\perf_history.bin` + named shared memory) so charts can show recent activity prior to opening the UI.
+  - **Optional Pre-launch Background Sampling (default OFF)**: When enabled via **Options → Record pre-launch performance in background**, a lightweight `/daemon` collector shares a memory-only named ring buffer (`Local\BetterWin10TaskmanPerfRing`, zero disk writes) so charts can show recent activity prior to opening the UI.
   - **Double-Click Compact Floating Views**: Double-clicking the Performance sidebar or right chart pane shrinks the window into a frameless floating card/graph view (`Esc` or double-click again to restore).
   - **Sky-Blue Mini CPU Graph Tray Icon**: Renders a compact CPU history waveform in the notification area.
 
@@ -37,7 +37,7 @@ build.bat
 ```
 
 ### CLI Options
-- `/0` .. `/6`: Open directly on the corresponding tab (`0 = Processes`, `1 = Performance`, etc.).
+- `/0` .. `/7`: Open directly on the corresponding tab (`0 = Processes`, `1 = Performance`, ..., `7 = Lock Check`).
 - `/multi`: Allow running another instance side-by-side without starting `/daemon`.
 - `/daemon`: Run the headless `500ms` ring-buffer collector only.
 
@@ -52,11 +52,11 @@ build.bat
 
 ### 目前尝试实现的功能
 - **深浅色主题与菜单栏适配**：支持跟随系统（`ImmersiveColorSet`）、浅色、深色三档切换（`Ctrl+Shift+D`、选项菜单或标签栏右侧切换胶囊），含标题栏、菜单栏与自绘列表/图表配色同步，标题栏同步显示当前主题模式（`(深色)` / `(浅色)`）。
-- **双语界面与混排字体**：支持随系统或手动切换简体中文 / English，中文辅以 `Noto Sans SC DemiLight` 与 `Segoe UI` 混排以改善观感。
-- **7 个基础选项卡与简略模式**：进程、性能（CPU / 内存 / 磁盘 / 网络 / GPU）、应用历史记录（读取本地 SRUM 记录）、启动（含 UWP 应用与启用/禁用）、用户、详细信息、服务。
+- **多语言界面（9 种语言 + 自动跟随）**：支持随系统或手动切换 **English** / **简体中文** / **繁體中文** / **日本語** / **한국어** / **Deutsch** / **Français** / **Español** / **Русский**，CJK 与西文混排适配。
+- **8 个选项卡与简略模式**：进程、性能（CPU / 内存 / 磁盘 / 网络 / GPU）、应用历史记录（读取本地 SRUM 记录）、启动（含 UWP 应用与启用/禁用）、用户、详细信息、服务，以及 **占用检查**（支持文件/文件夹/盘符拖入与句柄/模块/服务映射扫描、核心受保护进程防误杀判定及 NTFS 所有者与删除权限诊断）。
 - **几个微小的附加尝试**：
   - **显示时间段重采样**：将性能视图时间窗细分为 `30 秒（高）` / `60 秒（正常）` / `4 分钟（低）`，后台维持 `500ms` 环形缓冲采样，切换时间跨度时可立即重绘过去对应时段的曲线。
-  - **启动前历史采集（可选 `/daemon`）**：通过轻量无窗口守护采样与命名共享内存环缓冲（及 `%APPDATA%\BetterWin10Taskman\perf_history.bin`），尝试保留打开界面前最近一段时间的系统占用波形（若仅带 `/multi` 测试则不启用）。
+  - **启动前历史采集（默认关闭，可在选项中开启）**：勾选“**选项 → 后台预采样打开前性能**”后，通过轻量无窗口守护采样与纯内存命名共享环缓冲（`Local\BetterWin10TaskmanPerfRing`，零磁盘文件写入），可在本次登录会话内保留打开界面前最近一段时间的系统占用波形（若仅带 `/multi` 测试则不启用）。
   - **性能页双击缩小浮窗**：双击性能选项卡左侧导航栏或右侧主图表区域，可临时收起边框与多余控件为迷你浮窗（支持拖拽、卡片切换与双击 / `Esc` 还原）。
   - **天蓝色 CPU 微缩曲线托盘图标**：托盘图标尝试采用接近原版的天蓝色调并绘制迷你 CPU 历史波形（支持“最小化时隐藏”）。
 
@@ -76,7 +76,7 @@ build.bat
 构建完成后会在仓库根目录生成独立的 `Taskmgr.exe`（默认已列入 `.gitignore`，不会提交编译产物到仓库）。
 
 ### 常用启动参数
-- `/0` .. `/6`：启动时直接定位到第 0–6 个选项卡（例如 `/1` 直接打开性能页）。
+- `/0` .. `/7`：启动时直接定位到第 0–7 个选项卡（例如 `/1` 直接打开性能页、`/7` 直接打开占用检查页）。
 - `/multi`：允许并存多开实例（用于对比测试，不触发常驻 `/daemon`）。
 - `/daemon`：仅在后台维持 500ms 性能环形缓冲采样（无界面）。
 

@@ -62,6 +62,7 @@ cl.exe /nologo /c /utf-8 /std:c++17 /O2 /W3 /EHsc /MT /DUNICODE /D_UNICODE /DNOM
     src\core\user_manager.cpp ^
     src\core\app_history.cpp ^
     src\core\uwp_apps.cpp ^
+    src\core\lock_checker.cpp ^
     src\ui\listview_theme.cpp ^
     src\ui\dialogs.cpp ^
     src\ui\tab_processes.cpp ^
@@ -71,6 +72,7 @@ cl.exe /nologo /c /utf-8 /std:c++17 /O2 /W3 /EHsc /MT /DUNICODE /D_UNICODE /DNOM
     src\ui\tab_users.cpp ^
     src\ui\tab_details.cpp ^
     src\ui\tab_services.cpp ^
+    src\ui\tab_locks.cpp ^
     src\ui\main_window.cpp
 if errorlevel 1 exit /b 1
 
@@ -88,6 +90,7 @@ link.exe /nologo /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /OUT:Taskmgr.exe ^
     build\user_manager.obj ^
     build\app_history.obj ^
     build\uwp_apps.obj ^
+    build\lock_checker.obj ^
     build\listview_theme.obj ^
     build\dialogs.obj ^
     build\tab_processes.obj ^
@@ -97,6 +100,7 @@ link.exe /nologo /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /OUT:Taskmgr.exe ^
     build\tab_users.obj ^
     build\tab_details.obj ^
     build\tab_services.obj ^
+    build\tab_locks.obj ^
     build\main_window.obj ^
     user32.lib gdi32.lib gdiplus.lib comctl32.lib comdlg32.lib dwmapi.lib uxtheme.lib ^
     shell32.lib shlwapi.lib ole32.lib uuid.lib advapi32.lib pdh.lib iphlpapi.lib ws2_32.lib ^

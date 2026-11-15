@@ -21,13 +21,15 @@
 #include "tab_users.h"
 #include "tab_details.h"
 #include "tab_services.h"
+#include "tab_locks.h"
 
 namespace taskman {
 
 class MainWindow {
 public:
     static constexpr wchar_t kWndClass[] = L"BetterWin10TaskmanMainWnd";
-    static constexpr int kTabCount = 7;
+    static constexpr wchar_t kSummaryWndClass[] = L"BetterWin10TaskmanSummaryWnd";
+    static constexpr int kTabCount = 8;
 
     bool Create(int nCmdShow, int initialTab = -1);
     void Destroy();
@@ -35,6 +37,7 @@ public:
 
 private:
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK SummaryWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam);
 
     void InitMonitorsAndTabs();
@@ -51,6 +54,7 @@ private:
     void SetUpdateSpeed(UpdateSpeed speed);
     void UpdateWindowTitle();
     void UpdateAlwaysOnTop();
+    void SyncPreLaunchDaemon();
     void UpdatePrimaryActionButton();
     void LayoutFooterButtons();
     void SaveAllTabColumnWidths();
@@ -74,6 +78,7 @@ private:
     void NavigateToDetails(DWORD pid);
 
     HWND hwnd_ = nullptr;
+    HWND hSummaryWnd_ = nullptr;
     HMENU hMainMenu_ = nullptr;
 
     // Footer & simple controls
@@ -118,6 +123,7 @@ private:
     TabUsers tabUsers_;
     TabDetails tabDetails_;
     TabServices tabServices_;
+    TabLocks tabLocks_;
 
     ULONGLONG lastSampleTick_ = 0;
     ULONGLONG lastStartupRefreshTick_ = 0;

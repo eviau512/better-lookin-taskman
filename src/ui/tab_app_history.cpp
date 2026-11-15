@@ -221,11 +221,9 @@ bool TabAppHistory::HandleParentDraw(HWND, HDC hdc, const RECT& rc) {
     int leftRight = std::max<int>(padX, w - padX - linkW - gap);
     std::wstring bannerText;
     if (!sinceDate_.empty()) {
-        if (GetEffectiveLang(settings_->langMode) == LangMode::Chinese) {
-            bannerText = L"自 " + sinceDate_ + L" 以来，当前用户账户的资源使用情况。";
-        } else {
-            bannerText = L"Resource usage since " + sinceDate_ + L" for the current user account.";
-        }
+        wchar_t buf[256] = {};
+        swprintf_s(buf, s.appHistorySinceFmt, sinceDate_.c_str());
+        bannerText = buf;
     } else {
         bannerText = s.appHistoryNote;
     }

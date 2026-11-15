@@ -83,6 +83,10 @@ private:
     HFONT fontTotal_ = nullptr;
     HFONT fontGroup_ = nullptr;
     HIMAGELIST hRowHeightImg_ = nullptr;
+    ULONGLONG lastWheelTick_ = 0;
+    int wheelLockedAxis_ = 0; // 0 = unlocked, 1 = vertical (WM_MOUSEWHEEL), 2 = horizontal (WM_MOUSEHWHEEL)
+    int wheelAccumV_ = 0;
+    int wheelAccumH_ = 0;
 };
 
 } // namespace taskman

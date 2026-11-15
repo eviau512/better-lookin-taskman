@@ -465,7 +465,9 @@ LRESULT TabPerformance::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             if (dx > DpiScale(hwnd_, 5) || dy > DpiScale(hwnd_, 5)) {
                 lbtnDown_ = false;
                 ReleaseCapture();
-                SendMessageW(hParent_, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+                HWND hostWnd = GetParent(hwnd_);
+                if (!hostWnd) hostWnd = hParent_;
+                SendMessageW(hostWnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
                 return 0;
             }
         }
@@ -492,14 +494,45 @@ LRESULT TabPerformance::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
             InvalidateRect(hwnd_, &leftPaneRect_, FALSE);
         }
         return 0;
+    case WM_MOUSEHWHEEL:
     case WM_MOUSEWHEEL: {
         int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        int absDelta = std::abs(delta);
+        ULONGLONG now = GetTickCount64();
+        if (now - lastWheelTick_ > 180) {
+            wheelLockedAxis_ = 0;
+            wheelAccumV_ = 0;
+            wheelAccumH_ = 0;
+            navWheelRemainder_ = 0;
+        }
+        lastWheelTick_ = now;
+        bool isHorz = (msg == WM_MOUSEHWHEEL) || ((LOWORD(wParam) & MK_SHIFT) != 0);
+        if (isHorz) {
+            wheelAccumH_ += absDelta;
+            if (wheelLockedAxis_ == 0 && wheelAccumH_ >= 12 && wheelAccumH_ >= wheelAccumV_ * 3 / 2) {
+                wheelLockedAxis_ = 2;
+            }
+            return 0;
+        }
+        wheelAccumV_ += absDelta;
+        if (wheelLockedAxis_ == 0 && wheelAccumV_ >= 12 && wheelAccumV_ >= wheelAccumH_ * 3 / 2) {
+            wheelLockedAxis_ = 1;
+        }
+        if (wheelLockedAxis_ == 2 || (wheelLockedAxis_ == 0 && wheelAccumH_ > wheelAccumV_)) {
+            return 0;
+        }
         POINT pt{ static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)) };
         ScreenToClient(hwnd_, &pt);
         if (summaryMode_ != PerfSummaryMode::GraphOnly && PtInRect(&leftPaneRect_, pt)) {
-            navScrollY_ -= (delta / WHEEL_DELTA) * DpiScale(hwnd_, 42);
-            ClampScroll();
-            InvalidateRect(hwnd_, &leftPaneRect_, FALSE);
+            int stepPx = DpiScale(hwnd_, 42);
+            int totalScaled = delta * stepPx + navWheelRemainder_;
+            int movePx = totalScaled / WHEEL_DELTA;
+            navWheelRemainder_ = totalScaled % WHEEL_DELTA;
+            if (movePx != 0) {
+                navScrollY_ -= movePx;
+                ClampScroll();
+                InvalidateRect(hwnd_, &leftPaneRect_, FALSE);
+            }
         }
         return 0;
     }
@@ -535,6 +568,12 @@ LRESULT TabPerformance::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         HandleContextMenu(pt);
         return 0;
     }
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE && summaryMode_ != PerfSummaryMode::Normal) {
+            SetSummaryMode(PerfSummaryMode::Normal, true);
+            return 0;
+        }
+        break;
     }
     return DefWindowProcW(hwnd_, msg, wParam, lParam);
 }

@@ -11,9 +11,16 @@ enum class ThemeMode : int {
 };
 
 enum class LangMode : int {
-    Auto    = 0,
-    English = 1,
-    Chinese = 2
+    Auto               = 0,
+    English            = 1,
+    Chinese            = 2,
+    TraditionalChinese = 3,
+    Japanese           = 4,
+    Korean             = 5,
+    German             = 6,
+    French             = 7,
+    Spanish            = 8,
+    Russian            = 9
 };
 
 enum class UpdateSpeed : int {
@@ -59,13 +66,14 @@ struct AppSettings {
     bool hideWhenMinimized = false;
     bool showFullAccountName = false;
     bool showAllHistory = false;
+    bool preLaunchSampling = false;
     bool groupByType = true;
     bool showKernelTimes = false;
     bool cpuLogicalView = false;
     bool summaryView = false;
     bool moreDetails = true;
 
-    int activeTab = 0;          // 0..6
+    int activeTab = 0;          // 0..7
     int perfSelectedItem = 0;   // index in Performance left rail
 
     bool memShowPercent = false;
@@ -79,11 +87,12 @@ struct AppSettings {
     uint32_t procColMask = 0x3FF;
     int procColWidths[10] = { 265, 84, 74, 94, 74, 84, 74, 102, 100, 120 };
 
-    // Column widths for AppHistory, Startup, Users, Services tabs (stored at 96 DPI)
+    // Column widths for AppHistory, Startup, Users, Services, LockCheck tabs (stored at 96 DPI)
     int appHistColWidths[5]  = { 280, 118, 118, 138, 118 };
     int startupColWidths[4]  = { 270, 225, 108, 138 };
     int usersColWidths[6]    = { 235, 118, 86, 108, 102, 102 };
     int servicesColWidths[5] = { 175, 72, 320, 102, 150 };
+    int locksColWidths[5]    = { 175, 66, 165, 128, 270 };
 
     // Visibility bitmask and widths for Details tab
     uint32_t detailsColMask =

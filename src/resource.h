@@ -25,6 +25,14 @@
 #define IDM_OPT_LANG_AUTO           40110
 #define IDM_OPT_LANG_EN             40111
 #define IDM_OPT_LANG_ZH             40112
+#define IDM_OPT_PRELAUNCH_SAMPLING  40113
+#define IDM_OPT_LANG_ZHTW           40114
+#define IDM_OPT_LANG_JA             40115
+#define IDM_OPT_LANG_KO             40116
+#define IDM_OPT_LANG_DE             40117
+#define IDM_OPT_LANG_FR             40118
+#define IDM_OPT_LANG_ES             40119
+#define IDM_OPT_LANG_RU             40120
 
 // View menu commands
 #define IDM_VIEW_REFRESH_NOW        40201
@@ -110,6 +118,11 @@
 #define IDM_CTX_USER_EXPAND         41502
 #define IDM_CTX_USER_COLLAPSE       41503
 
+#define IDM_CTX_LOCKS_END           41600
+#define IDM_CTX_LOCKS_OPEN_LOC      41601
+#define IDM_CTX_LOCKS_GO_DETAILS    41602
+#define IDM_CTX_LOCKS_COPY_PATH     41603
+
 // Child control IDs
 #define IDC_BTN_MORE_DETAILS        1001
 #define IDC_BTN_PRIMARY_ACTION      1002
@@ -122,6 +135,12 @@
 #define IDC_LIST_DETAILS            1009
 #define IDC_LIST_SERVICES           1010
 #define IDC_LINK_ACTION             1011
+#define IDC_LIST_LOCKS              1012
+#define IDC_LOCKS_PATH_EDIT         1013
+#define IDC_LOCKS_BTN_FILE          1014
+#define IDC_LOCKS_BTN_FOLDER        1015
+#define IDC_LOCKS_BTN_SCAN          1016
+#define IDC_LOCKS_BTN_ELEVATE       1017
 
 // Dialog IDs
 #define IDD_RUN_TASK                201
@@ -151,3 +170,4 @@
 #define WM_APP_THEME_CHANGED        (WM_APP + 3)
 #define WM_APP_NAV_TO_DETAILS       (WM_APP + 4)
 #define WM_APP_HISTORY_READY        (WM_APP + 13)
+#define WM_APP_LOCKS_READY          (WM_APP + 14)

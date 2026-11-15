@@ -61,6 +61,11 @@ private:
     PerfSummaryMode summaryMode_ = PerfSummaryMode::Normal;
     bool lbtnDown_ = false;
     POINT dragStartPt_{};
+    int navWheelRemainder_ = 0;
+    ULONGLONG lastWheelTick_ = 0;
+    int wheelLockedAxis_ = 0;
+    int wheelAccumV_ = 0;
+    int wheelAccumH_ = 0;
 
     RECT leftPaneRect_{};
     RECT rightPaneRect_{};

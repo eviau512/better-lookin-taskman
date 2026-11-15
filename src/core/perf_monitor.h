@@ -189,8 +189,6 @@ private:
     void InitGpus();
     void InitPdh();
     void InitSharedHistory();
-    void LoadRingFromDisk(SharedPerfRing& ring);
-    void SaveRingToDisk(const SharedPerfRing& ring);
     void SyncFromSharedRing(bool updateLiveReadout);
     void AppendSlotToSharedRing(const RawPerfSlot& slot);
 
@@ -219,7 +217,6 @@ private:
     SharedPerfRing* sharedRing_ = nullptr;
     HANDLE hRingMutex_ = nullptr;
     std::vector<RawPerfSlot> cachedSlots_;
-    uint32_t savePersistCounter_ = 0;
 
     void* pdhQuery_ = nullptr;
     void* pdhCpuPerf_ = nullptr;

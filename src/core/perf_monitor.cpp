@@ -128,13 +128,24 @@ static uint64_t GetNowUtcMs() {
     return uli.QuadPart / 10000ULL;
 }
 
-static std::wstring GetPerfHistoryFilePath() {
+static void CleanupLegacyPerfHistoryFiles() {
+    static std::atomic<bool> cleaned{ false };
+    if (cleaned.exchange(true, std::memory_order_acq_rel)) return;
     wchar_t appData[MAX_PATH] = {};
     DWORD len = GetEnvironmentVariableW(L"APPDATA", appData, ARRAYSIZE(appData));
-    if (len == 0 || len >= ARRAYSIZE(appData)) return L"";
+    if (len == 0 || len >= ARRAYSIZE(appData)) return;
     std::wstring dir = std::wstring(appData) + L"\\BetterWin10Taskman";
-    CreateDirectoryW(dir.c_str(), nullptr);
-    return dir + L"\\perf_history.bin";
+    if (GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES) return;
+    std::wstring binPath = dir + L"\\perf_history.bin";
+    std::wstring tmpPath = dir + L"\\perf_history.bin.tmp";
+    if (GetFileAttributesW(binPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteFileW(binPath.c_str());
+    }
+    if (GetFileAttributesW(tmpPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        DeleteFileW(tmpPath.c_str());
+    }
+    // Only removes dir if empty; leaves any user-created files untouched
+    RemoveDirectoryW(dir.c_str());
 }
 
 static std::wstring TrimStr(std::wstring s) {
@@ -191,15 +202,6 @@ void PerfMonitor::Shutdown() {
         pdhGpuShared_ = nullptr;
     }
     if (sharedRing_) {
-        SharedPerfRing snapshot{};
-        bool haveSnap = false;
-        if (hRingMutex_) WaitForSingleObject(hRingMutex_, 50);
-        if (sharedRing_->magic == kPerfRingMagic && sharedRing_->version == kPerfRingVersion) {
-            snapshot = *sharedRing_;
-            haveSnap = true;
-        }
-        if (hRingMutex_) ReleaseMutex(hRingMutex_);
-        if (haveSnap) SaveRingToDisk(snapshot);
         UnmapViewOfFile(sharedRing_);
         sharedRing_ = nullptr;
     }
@@ -214,6 +216,7 @@ void PerfMonitor::Shutdown() {
 }
 
 void PerfMonitor::InitSharedHistory() {
+    CleanupLegacyPerfHistoryFiles();
     if (!hRingMutex_) {
         hRingMutex_ = CreateMutexW(nullptr, FALSE, L"Local\\BetterWin10TaskmanPerfRingLock");
     }
@@ -232,43 +235,10 @@ void PerfMonitor::InitSharedHistory() {
                     std::memset(sharedRing_, 0, sizeof(SharedPerfRing));
                     sharedRing_->magic = kPerfRingMagic;
                     sharedRing_->version = kPerfRingVersion;
-                    LoadRingFromDisk(*sharedRing_);
                 }
                 if (hRingMutex_) ReleaseMutex(hRingMutex_);
             }
         }
-    }
-}
-
-void PerfMonitor::LoadRingFromDisk(SharedPerfRing& ring) {
-    std::wstring path = GetPerfHistoryFilePath();
-    if (path.empty()) return;
-    HANDLE hFile = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) return;
-    SharedPerfRing tmp{};
-    DWORD readBytes = 0;
-    bool ok = ReadFile(hFile, &tmp, static_cast<DWORD>(sizeof(SharedPerfRing)), &readBytes, nullptr) != FALSE;
-    CloseHandle(hFile);
-    if (ok && readBytes == sizeof(SharedPerfRing) &&
-        tmp.magic == kPerfRingMagic && tmp.version == kPerfRingVersion) {
-        ring = tmp;
-    }
-}
-
-void PerfMonitor::SaveRingToDisk(const SharedPerfRing& ring) {
-    std::wstring path = GetPerfHistoryFilePath();
-    if (path.empty()) return;
-    std::wstring tmpPath = path + L".tmp";
-    HANDLE hFile = CreateFileW(tmpPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (hFile == INVALID_HANDLE_VALUE) return;
-    DWORD written = 0;
-    BOOL ok = WriteFile(hFile, &ring, static_cast<DWORD>(sizeof(SharedPerfRing)), &written, nullptr);
-    CloseHandle(hFile);
-    if (ok && written == sizeof(SharedPerfRing)) {
-        MoveFileExW(tmpPath.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
-    } else {
-        DeleteFileW(tmpPath.c_str());
     }
 }
 
@@ -335,8 +305,6 @@ void PerfMonitor::AppendSlotToSharedRing(const RawPerfSlot& slot) {
         return;
     }
 
-    SharedPerfRing persistCopy{};
-    bool shouldPersist = false;
     if (hRingMutex_) WaitForSingleObject(hRingMutex_, 50);
     if (sharedRing_->magic == kPerfRingMagic && sharedRing_->version == kPerfRingVersion) {
         uint64_t lastTs = 0;
@@ -349,17 +317,10 @@ void PerfMonitor::AppendSlotToSharedRing(const RawPerfSlot& slot) {
             uint32_t idx = sharedRing_->writePos % kRawHistoryLen;
             sharedRing_->slots[idx] = slot;
             sharedRing_->writePos++;
-            if ((++savePersistCounter_ % 10u) == 0u) {
-                persistCopy = *sharedRing_;
-                shouldPersist = true;
-            }
         }
     }
     if (hRingMutex_) ReleaseMutex(hRingMutex_);
 
-    if (shouldPersist) {
-        SaveRingToDisk(persistCopy);
-    }
     SyncFromSharedRing(false);
 }
 

@@ -57,7 +57,7 @@ void LoadSettings(AppSettings& s) {
 
     tmp = static_cast<DWORD>(s.langMode);
     ReadDword(hKey, L"LangMode", tmp);
-    if (tmp <= 2) s.langMode = static_cast<LangMode>(tmp);
+    if (tmp <= static_cast<DWORD>(LangMode::Russian)) s.langMode = static_cast<LangMode>(tmp);
 
     tmp = static_cast<DWORD>(s.updateSpeed);
     ReadDword(hKey, L"UpdateSpeed", tmp);
@@ -68,6 +68,7 @@ void LoadSettings(AppSettings& s) {
     ReadBool(hKey, L"HideWhenMinimized", s.hideWhenMinimized);
     ReadBool(hKey, L"ShowFullAccountName", s.showFullAccountName);
     ReadBool(hKey, L"ShowAllHistory", s.showAllHistory);
+    ReadBool(hKey, L"PreLaunchSampling", s.preLaunchSampling);
     ReadBool(hKey, L"GroupByType", s.groupByType);
     ReadBool(hKey, L"ShowKernelTimes", s.showKernelTimes);
     ReadBool(hKey, L"CpuLogicalView", s.cpuLogicalView);
@@ -76,7 +77,7 @@ void LoadSettings(AppSettings& s) {
 
     tmp = static_cast<DWORD>(s.activeTab);
     ReadDword(hKey, L"ActiveTab", tmp);
-    if (tmp <= 6) s.activeTab = static_cast<int>(tmp);
+    if (tmp <= 7) s.activeTab = static_cast<int>(tmp);
 
     tmp = static_cast<DWORD>(s.perfSelectedItem);
     ReadDword(hKey, L"PerfSelectedItem", tmp);
@@ -113,6 +114,7 @@ void LoadSettings(AppSettings& s) {
     ReadIntArray(hKey, L"UsersColWidths",    s.usersColWidths,    6,          24, 2400);
     ReadIntArray(hKey, L"DetailsColWidths",  s.detailsColWidths,  DCOL_COUNT, 24, 2400);
     ReadIntArray(hKey, L"ServicesColWidths", s.servicesColWidths, 5,          24, 2400);
+    ReadIntArray(hKey, L"LocksColWidths",    s.locksColWidths,    5,          24, 2400);
 
     RegCloseKey(hKey);
 }
@@ -132,6 +134,7 @@ void SaveSettings(const AppSettings& s) {
     WriteDword(hKey, L"HideWhenMinimized", s.hideWhenMinimized ? 1 : 0);
     WriteDword(hKey, L"ShowFullAccountName", s.showFullAccountName ? 1 : 0);
     WriteDword(hKey, L"ShowAllHistory", s.showAllHistory ? 1 : 0);
+    WriteDword(hKey, L"PreLaunchSampling", s.preLaunchSampling ? 1 : 0);
     WriteDword(hKey, L"GroupByType", s.groupByType ? 1 : 0);
     WriteDword(hKey, L"ShowKernelTimes", s.showKernelTimes ? 1 : 0);
     WriteDword(hKey, L"CpuLogicalView", s.cpuLogicalView ? 1 : 0);
@@ -154,6 +157,7 @@ void SaveSettings(const AppSettings& s) {
     WriteIntArray(hKey, L"UsersColWidths",    s.usersColWidths,    6);
     WriteIntArray(hKey, L"DetailsColWidths",  s.detailsColWidths,  DCOL_COUNT);
     WriteIntArray(hKey, L"ServicesColWidths", s.servicesColWidths, 5);
+    WriteIntArray(hKey, L"LocksColWidths",    s.locksColWidths,    5);
 
     RegCloseKey(hKey);
 }

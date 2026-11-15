@@ -1,6 +1,7 @@
 #include "listview_theme.h"
 #include "../core/theme.h"
 #include <algorithm>
+#include <cmath>
 
 namespace taskman {
 
@@ -29,8 +30,12 @@ void ThemedListView::Attach(HWND hList, bool twoLineHeader) {
     SetWindowSubclass(hList_, ListSubclassProc, kListSubclassId, reinterpret_cast<DWORD_PTR>(this));
 
     hHeader_ = ListView_GetHeader(hList_);
+    bool noColHeader = hList_ && ((GetWindowLongPtrW(hList_, GWL_STYLE) & LVS_NOCOLUMNHEADER) != 0);
     if (hHeader_) {
         SetWindowSubclass(hHeader_, HeaderSubclassProc, kHeaderSubclassId, reinterpret_cast<DWORD_PTR>(this));
+        if (noColHeader) {
+            ShowWindow(hHeader_, SW_HIDE);
+        }
     }
 
     ApplyTheme();
@@ -147,6 +152,62 @@ LRESULT CALLBACK ThemedListView::ListSubclassProc(HWND hwnd, UINT msg, WPARAM wP
         }
         break;
     }
+    case WM_MOUSEWHEEL:
+    case WM_MOUSEHWHEEL: {
+        if (LOWORD(wParam) & MK_CONTROL) break;
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        int absDelta = std::abs(delta);
+        ULONGLONG now = GetTickCount64();
+        if (now - self->lastWheelTick_ > 180) {
+            self->wheelLockedAxis_ = 0;
+            self->wheelAccumV_ = 0;
+            self->wheelAccumH_ = 0;
+        }
+        self->lastWheelTick_ = now;
+
+        const bool isHorz = (msg == WM_MOUSEHWHEEL) || ((LOWORD(wParam) & MK_SHIFT) != 0);
+        if (isHorz) {
+            self->wheelAccumH_ += absDelta;
+        } else {
+            self->wheelAccumV_ += absDelta;
+        }
+
+        // Determine or update dominant axis lock for touchpad two-finger swipe
+        if (self->wheelLockedAxis_ == 0) {
+            if (self->wheelAccumV_ + self->wheelAccumH_ >= 12) {
+                if (self->wheelAccumV_ >= self->wheelAccumH_ * 3 / 2) {
+                    self->wheelLockedAxis_ = 1;
+                } else if (self->wheelAccumH_ >= self->wheelAccumV_ * 3 / 2) {
+                    self->wheelLockedAxis_ = 2;
+                }
+            }
+        } else if (self->wheelLockedAxis_ == 1 && isHorz && absDelta >= 60 && self->wheelAccumH_ > self->wheelAccumV_ * 2) {
+            self->wheelLockedAxis_ = 2;
+        } else if (self->wheelLockedAxis_ == 2 && !isHorz && absDelta >= 60 && self->wheelAccumV_ > self->wheelAccumH_ * 2) {
+            self->wheelLockedAxis_ = 1;
+        }
+
+        // Suppress cross-axis drift during a locked or dominant single-axis swipe
+        if (isHorz && (self->wheelLockedAxis_ == 1 || (self->wheelLockedAxis_ == 0 && self->wheelAccumV_ > self->wheelAccumH_))) {
+            return 0;
+        }
+        if (!isHorz && (self->wheelLockedAxis_ == 2 || (self->wheelLockedAxis_ == 0 && self->wheelAccumH_ > self->wheelAccumV_))) {
+            return 0;
+        }
+
+        LRESULT res = DefSubclassProc(hwnd, msg, wParam, lParam);
+        if (isHorz) {
+            InvalidateRect(hwnd, nullptr, FALSE);
+            if (self->hHeader_) InvalidateRect(self->hHeader_, nullptr, FALSE);
+        }
+        return res;
+    }
+    case WM_HSCROLL: {
+        LRESULT res = DefSubclassProc(hwnd, msg, wParam, lParam);
+        InvalidateRect(hwnd, nullptr, FALSE);
+        if (self->hHeader_) InvalidateRect(self->hHeader_, nullptr, FALSE);
+        return res;
+    }
     case WM_ERASEBKGND: {
         HDC hdc = reinterpret_cast<HDC>(wParam);
         RECT rc{};
@@ -232,6 +293,13 @@ LRESULT CALLBACK ThemedListView::HeaderSubclassProc(HWND hwnd, UINT msg, WPARAM 
     switch (msg) {
     case HDM_LAYOUT: {
         LRESULT res = DefSubclassProc(hwnd, msg, wParam, lParam);
+        if (self->hList_ && ((GetWindowLongPtrW(self->hList_, GWL_STYLE) & LVS_NOCOLUMNHEADER) != 0)) {
+            auto* pLayout = reinterpret_cast<HDLAYOUT*>(lParam);
+            pLayout->pwpos->cy = 0;
+            pLayout->pwpos->flags |= SWP_HIDEWINDOW;
+            pLayout->prc->top = 0;
+            return res;
+        }
         if (self->twoLineHeader_) {
             auto* pLayout = reinterpret_cast<HDLAYOUT*>(lParam);
             int h = DpiScale(hwnd, 56);
