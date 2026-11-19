@@ -170,9 +170,9 @@ void ComputeCompactKvRegion(HDC hdc, HWND hwnd, int rx, int rw, int leftUsedW,
     int maxKeyW = MeasureMaxTextW(hdc, hwnd, 10, keys);
     int leftCapW = rw * 52 / 100;
     int clampedLeftW = (std::min)(leftUsedW, leftCapW);
-    outKx = rx + clampedLeftW + DpiScale(hwnd, 28);
+    outKx = rx + clampedLeftW + DpiScale(hwnd, 18);
     int availW = (std::max)(DpiScale(hwnd, 120), (rx + rw) - outKx);
-    int desiredKw = maxKeyW + DpiScale(hwnd, 20);
+    int desiredKw = maxKeyW + DpiScale(hwnd, 14);
     outKw = std::clamp(desiredKw, DpiScale(hwnd, 56), availW * 48 / 100);
     outVw = (std::max)(DpiScale(hwnd, 60), availW - outKw);
 }
@@ -351,8 +351,8 @@ int TabPerformance::GetSidebarPreferredWidth() const {
     ReleaseDC(hwnd_, hdc);
 
     int overhead = DpiScale(hwnd_, 6) * 2 + DpiScale(hwnd_, 8) + DpiScale(hwnd_, 72) +
-                   DpiScale(hwnd_, 10) + DpiScale(hwnd_, 12);
-    return std::clamp(overhead + maxTextW, DpiScale(hwnd_, 248), DpiScale(hwnd_, 300));
+                   DpiScale(hwnd_, 10) + DpiScale(hwnd_, 10);
+    return std::clamp(overhead + maxTextW, DpiScale(hwnd_, 228), DpiScale(hwnd_, 290));
 }
 
 int TabPerformance::GetSidebarPreferredHeight() const {
@@ -365,16 +365,16 @@ int TabPerformance::GetSidebarPreferredHeight() const {
 }
 
 int TabPerformance::GetMinimumRequiredWidth() const {
-    if (!hwnd_) return 860;
+    if (!hwnd_) return 780;
     int sideW = GetSidebarPreferredWidth();
-    int maxRw = DpiScale(hwnd_, 550);
+    int maxRw = DpiScale(hwnd_, 440);
 
     HDC hdc = GetDC(hwnd_);
     if (hdc && perf_ && settings_) {
         ThemeManager& tm = ThemeManager::Instance();
         const Strings& s = GetStrings(settings_->langMode);
-        const int valCap = DpiScale(hwnd_, 380);
-        const int hwCap = DpiScale(hwnd_, 360);
+        const int valCap = DpiScale(hwnd_, 260);
+        const int hwCap = DpiScale(hwnd_, 300);
 
         auto measureStatColW = [&](int valPt, std::initializer_list<const wchar_t*> labels,
                                    std::initializer_list<const wchar_t*> values) -> int {
@@ -394,14 +394,14 @@ int TabPerformance::GetMinimumRequiredWidth() const {
                 int vw = tm.MeasureTextWidth(hdc, hwnd_, 10, false, v.c_str(), -1);
                 maxValW = (std::max)(maxValW, (std::min)(valCap, vw));
             }
-            int desiredKw = maxKeyW + DpiScale(hwnd_, 20);
-            int minAvail = (std::max)(desiredKw + maxValW + DpiScale(hwnd_, 12),
+            int desiredKw = maxKeyW + DpiScale(hwnd_, 14);
+            int minAvail = (std::max)(desiredKw + maxValW + DpiScale(hwnd_, 4),
                                       (desiredKw * 100 + 47) / 48);
-            int neededRw = (std::max)(leftUsedW + DpiScale(hwnd_, 28) + minAvail,
+            int neededRw = (std::max)(leftUsedW + DpiScale(hwnd_, 18) + minAvail,
                                       (leftUsedW * 100 + 51) / 52);
             if (!hwModel.empty()) {
                 int hwW = (std::min)(hwCap, tm.MeasureTextWidth(hdc, hwnd_, 12, false, hwModel.c_str(), -1));
-                int headerRw = (hwW * 100 + 61) / 62 + DpiScale(hwnd_, 10);
+                int headerRw = (hwW * 100 + 61) / 62 + DpiScale(hwnd_, 6);
                 neededRw = (std::max)(neededRw, headerRw);
             }
             maxRw = (std::max)(maxRw, neededRw);
@@ -506,8 +506,9 @@ int TabPerformance::GetMinimumRequiredWidth() const {
             std::wstring dedStr = FormatMemPairGB(g.dedicatedUsed, g.dedicatedTotal);
             std::wstring shdStr = FormatMemPairGB(g.sharedUsed, g.sharedTotal);
             std::wstring totStr = FormatMemPairGB(g.dedicatedUsed + g.sharedUsed, g.dedicatedTotal + g.sharedTotal);
-            int col0W = measureStatColW(16, { s.perfUtilization, s.perfDedGpuMem, s.perfGpuMemory },
-                                        { L"100%", L"99.9/99.9 GB", utilStr.c_str(), dedStr.c_str(), totStr.c_str() });
+            int col0W = (std::max)(
+                measureStatColW(16, { s.perfUtilization }, { L"100%", utilStr.c_str() }),
+                measureStatColW(14, { s.perfDedGpuMem, s.perfGpuMemory }, { L"99.9/99.9 GB", dedStr.c_str(), totStr.c_str() }));
             int col1W = measureStatColW(14, { s.perfSharedGpuMem, g.hasTemperature ? s.perfGpuTemp : L"" },
                                         { L"99.9/99.9 GB", shdStr.c_str() });
             considerPage(col0W + colGap + col1W,
@@ -1553,9 +1554,9 @@ void TabPerformance::Paint(HDC hdc, const RECT& clientRc) {
             std::wstring shdStr = FormatMemPairGB(g.sharedUsed, g.sharedTotal);
             std::wstring totStr = FormatMemPairGB(g.dedicatedUsed + g.sharedUsed, g.dedicatedTotal + g.sharedTotal);
 
-            int col0W = measureStatColW(16,
-                                      { s.perfUtilization, s.perfDedGpuMem, s.perfGpuMemory },
-                                      { L"100%", L"99.9/99.9 GB", utilStr.c_str(), dedStr.c_str(), totStr.c_str() });
+            int col0W = (std::max)(
+                measureStatColW(16, { s.perfUtilization }, { L"100%", utilStr.c_str() }),
+                measureStatColW(14, { s.perfDedGpuMem, s.perfGpuMemory }, { L"99.9/99.9 GB", dedStr.c_str(), totStr.c_str() }));
             int col1W = measureStatColW(14,
                                       { s.perfSharedGpuMem, g.hasTemperature ? s.perfGpuTemp : L"" },
                                       { L"99.9/99.9 GB", shdStr.c_str() });

@@ -1,3 +1,10 @@
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <windows.h>
 #include "process_monitor.h"
 #include "format_util.h"
 #include <winternl.h>
@@ -86,6 +93,74 @@ static const GUID kDiskIoGuid =
 // TcpIpGuid: {9A280AC0-C8E0-11D1-84E2-00C04FB998A2}
 static const GUID kTcpIpGuid =
     { 0x9a280ac0, 0xc8e0, 0x11d1, { 0x84, 0xe2, 0x00, 0xc0, 0x4f, 0xb9, 0x98, 0xa2 } };
+// UdpIpGuid: {BF3A50C5-A9C9-4988-A005-2DF0B7C80F80}
+static const GUID kUdpIpGuid =
+    { 0xbf3a50c5, 0xa9c9, 0x4988, { 0xa0, 0x05, 0x2d, 0xf0, 0xb7, 0xc8, 0x0f, 0x80 } };
+
+static void QueryActiveSocketOwners(std::unordered_map<DWORD, uint32_t>& tcpEstabByPid,
+                                    std::unordered_map<DWORD, uint32_t>& udpByPid) {
+    auto isActiveTcp = [](DWORD state) -> bool {
+        return state == MIB_TCP_STATE_ESTAB ||
+               state == MIB_TCP_STATE_SYN_SENT ||
+               state == MIB_TCP_STATE_SYN_RCVD ||
+               state == MIB_TCP_STATE_FIN_WAIT1 ||
+               state == MIB_TCP_STATE_FIN_WAIT2 ||
+               state == MIB_TCP_STATE_CLOSE_WAIT;
+    };
+
+    // TCP IPv4
+    ULONG sz = 0;
+    if (GetExtendedTcpTable(nullptr, &sz, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == ERROR_INSUFFICIENT_BUFFER && sz > 0) {
+        std::vector<BYTE> buf(sz);
+        if (GetExtendedTcpTable(buf.data(), &sz, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+            const auto* tbl = reinterpret_cast<const MIB_TCPTABLE_OWNER_PID*>(buf.data());
+            for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                DWORD pid = tbl->table[i].dwOwningPid;
+                if (pid > 0 && isActiveTcp(tbl->table[i].dwState)) {
+                    tcpEstabByPid[pid]++;
+                }
+            }
+        }
+    }
+    // TCP IPv6
+    sz = 0;
+    if (GetExtendedTcpTable(nullptr, &sz, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_ALL, 0) == ERROR_INSUFFICIENT_BUFFER && sz > 0) {
+        std::vector<BYTE> buf(sz);
+        if (GetExtendedTcpTable(buf.data(), &sz, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_ALL, 0) == NO_ERROR) {
+            const auto* tbl = reinterpret_cast<const MIB_TCP6TABLE_OWNER_PID*>(buf.data());
+            for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                DWORD pid = tbl->table[i].dwOwningPid;
+                if (pid > 0 && isActiveTcp(tbl->table[i].dwState)) {
+                    tcpEstabByPid[pid]++;
+                }
+            }
+        }
+    }
+    // UDP IPv4
+    sz = 0;
+    if (GetExtendedUdpTable(nullptr, &sz, FALSE, AF_INET, UDP_TABLE_OWNER_PID, 0) == ERROR_INSUFFICIENT_BUFFER && sz > 0) {
+        std::vector<BYTE> buf(sz);
+        if (GetExtendedUdpTable(buf.data(), &sz, FALSE, AF_INET, UDP_TABLE_OWNER_PID, 0) == NO_ERROR) {
+            const auto* tbl = reinterpret_cast<const MIB_UDPTABLE_OWNER_PID*>(buf.data());
+            for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                DWORD pid = tbl->table[i].dwOwningPid;
+                if (pid > 0) udpByPid[pid]++;
+            }
+        }
+    }
+    // UDP IPv6
+    sz = 0;
+    if (GetExtendedUdpTable(nullptr, &sz, FALSE, AF_INET6, UDP_TABLE_OWNER_PID, 0) == ERROR_INSUFFICIENT_BUFFER && sz > 0) {
+        std::vector<BYTE> buf(sz);
+        if (GetExtendedUdpTable(buf.data(), &sz, FALSE, AF_INET6, UDP_TABLE_OWNER_PID, 0) == NO_ERROR) {
+            const auto* tbl = reinterpret_cast<const MIB_UDP6TABLE_OWNER_PID*>(buf.data());
+            for (DWORD i = 0; i < tbl->dwNumEntries; ++i) {
+                DWORD pid = tbl->table[i].dwOwningPid;
+                if (pid > 0) udpByPid[pid]++;
+            }
+        }
+    }
+}
 
 static const wchar_t* kEtwSessionName = L"BetterWin10TaskmanTrace";
 
@@ -215,6 +290,7 @@ void ProcessMonitor::SamplePdh() {
     pdhGpuByPid_.clear();
     totals_.diskPercent = 0.0;
     totals_.networkPercent = 0.0;
+    totals_.networkBytesPerSec = 0.0;
     totals_.gpuPercent = 0.0;
 
     if (!pdhReady_.load(std::memory_order_acquire) || !pdhQuery_) return;
@@ -257,6 +333,7 @@ void ProcessMonitor::SamplePdh() {
                 }
             }
         }
+        totals_.networkBytesPerSec = sumBytes;
         if (maxBw > 0.0) {
             totals_.networkPercent = (std::min)(100.0, (sumBytes * 8.0 / maxBw) * 100.0);
         }
@@ -336,7 +413,7 @@ static VOID WINAPI EtwCallback(PEVENT_RECORD ev) {
     const GUID& g = ev->EventHeader.ProviderId;
     UCHAR op = ev->EventHeader.EventDescriptor.Opcode;
 
-    if (IsEqualGUID(g, kTcpIpGuid)) {
+    if (IsEqualGUID(g, kTcpIpGuid) || IsEqualGUID(g, kUdpIpGuid)) {
         if ((op == 10 || op == 11 || op == 26 || op == 27) && ev->UserData && ev->UserDataLength >= 8) {
             const uint32_t* d = reinterpret_cast<const uint32_t*>(ev->UserData);
             DWORD pid = d[0];
@@ -797,6 +874,8 @@ void ProcessMonitor::Refresh(bool showFullAccountName, bool needCommandLines) {
 
     std::vector<ProcessInfo> nextList;
     nextList.reserve(320);
+    std::vector<ULONGLONG> nextOtherDeltas;
+    nextOtherDeltas.reserve(320);
 
     std::unordered_map<DWORD, PrevTiming> nextTimings;
     nextTimings.reserve(320);
@@ -883,14 +962,20 @@ void ProcessMonitor::Refresh(bool showFullAccountName, bool needCommandLines) {
 
             ULONGLONG ioTransfer = static_cast<ULONGLONG>(spi->ReadTransferCount.QuadPart) +
                                    static_cast<ULONGLONG>(spi->WriteTransferCount.QuadPart);
+            ULONGLONG ioOther = static_cast<ULONGLONG>(spi->OtherTransferCount.QuadPart);
+            ULONGLONG ioOtherDelta = 0;
 
             PrevTiming curT{};
             curT.createTime = info.createTime;
             curT.cpuTime100ns = cpuTotal;
             curT.ioTransferBytes = ioTransfer;
+            curT.ioOtherBytes = ioOther;
 
             auto ptIt = prevTimings_.find(pid);
             if (ptIt != prevTimings_.end() && ptIt->second.createTime == info.createTime) {
+                if (ioOther >= ptIt->second.ioOtherBytes) {
+                    ioOtherDelta = ioOther - ptIt->second.ioOtherBytes;
+                }
                 if (sysDelta > 0 && cpuTotal >= ptIt->second.cpuTime100ns) {
                     ULONGLONG dCpu = cpuTotal - ptIt->second.cpuTime100ns;
                     info.cpuPercent = (std::min)(100.0,
@@ -940,10 +1025,56 @@ void ProcessMonitor::Refresh(bool showFullAccountName, bool needCommandLines) {
 
             nextTimings[pid] = curT;
             nextList.push_back(std::move(info));
+            nextOtherDeltas.push_back(ioOtherDelta);
         }
 
         if (spi->NextEntryOffset == 0) break;
         ptr += spi->NextEntryOffset;
+    }
+
+    // Non-elevated fallback (and backup when ETW kernel session is unavailable):
+    // Attribute live system adapter throughput across processes holding active TCP/UDP sockets,
+    // weighted by per-process OtherTransferCount (Winsock/AFD IOCTL byte deltas).
+    if (!etwRunning_.load() && totals_.networkBytesPerSec > 0.0 && !nextList.empty()) {
+        std::unordered_map<DWORD, uint32_t> tcpEstabByPid;
+        std::unordered_map<DWORD, uint32_t> udpByPid;
+        QueryActiveSocketOwners(tcpEstabByPid, udpByPid);
+
+        double sumOtherWeight = 0.0;
+        double sumSockWeight = 0.0;
+        for (size_t i = 0; i < nextList.size(); ++i) {
+            DWORD pid = nextList[i].pid;
+            auto tIt = tcpEstabByPid.find(pid);
+            auto uIt = udpByPid.find(pid);
+            uint32_t tc = (tIt != tcpEstabByPid.end()) ? tIt->second : 0;
+            uint32_t uc = (uIt != udpByPid.end()) ? uIt->second : 0;
+            if (tc == 0 && uc == 0) continue;
+            sumOtherWeight += static_cast<double>(nextOtherDeltas[i]);
+            sumSockWeight += static_cast<double>(tc * 4u + uc);
+        }
+
+        if (sumOtherWeight > 0.0) {
+            for (size_t i = 0; i < nextList.size(); ++i) {
+                DWORD pid = nextList[i].pid;
+                if (tcpEstabByPid.find(pid) == tcpEstabByPid.end() &&
+                    udpByPid.find(pid) == udpByPid.end()) continue;
+                if (nextOtherDeltas[i] > 0) {
+                    nextList[i].netBytesPerSec = totals_.networkBytesPerSec *
+                        (static_cast<double>(nextOtherDeltas[i]) / sumOtherWeight);
+                }
+            }
+        } else if (sumSockWeight > 0.0) {
+            for (size_t i = 0; i < nextList.size(); ++i) {
+                DWORD pid = nextList[i].pid;
+                auto tIt = tcpEstabByPid.find(pid);
+                auto uIt = udpByPid.find(pid);
+                uint32_t tc = (tIt != tcpEstabByPid.end()) ? tIt->second : 0;
+                uint32_t uc = (uIt != udpByPid.end()) ? uIt->second : 0;
+                if (tc == 0 && uc == 0) continue;
+                nextList[i].netBytesPerSec = totals_.networkBytesPerSec *
+                    (static_cast<double>(tc * 4u + uc) / sumSockWeight);
+            }
+        }
     }
 
     prevTimings_.swap(nextTimings);

@@ -160,7 +160,7 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         if (GetMonitorInfoW(hMon, &mi)) {
             int workW = mi.rcWork.right - mi.rcWork.left;
             int workH = mi.rcWork.bottom - mi.rcWork.top;
-            w = std::clamp<int>(r.right - r.left, MulDiv(860, static_cast<int>(sysDpi), 96), workW);
+            w = std::clamp<int>(r.right - r.left, MulDiv(740, static_cast<int>(sysDpi), 96), workW);
             h = std::clamp<int>(r.bottom - r.top, MulDiv(600, static_cast<int>(sysDpi), 96), workH);
             x = std::clamp<int>(r.left, mi.rcWork.left, mi.rcWork.right - 250);
             y = std::clamp<int>(r.top, mi.rcWork.top, mi.rcWork.bottom - 200);
@@ -680,8 +680,8 @@ void MainWindow::OnSearchTextChanged() {
 }
 
 int MainWindow::GetMinimumDetailedWidth() const {
-    if (!hwnd_) return 860;
-    int baseMin = DpiScale(hwnd_, 860);
+    if (!hwnd_) return 760;
+    int baseMin = DpiScale(hwnd_, 740);
 
     // Ensure 8 tabs + theme pill always fit comfortably without crowding
     const Strings& s = GetStrings(settings_.langMode);
@@ -1173,12 +1173,13 @@ void MainWindow::UpdatePrimaryActionButton() {
     if (!settings_.moreDetails) {
         int sel = ListView_GetNextItem(hListSimple_, -1, LVNI_SELECTED);
         enableBtn = (sel >= 0 && sel < static_cast<int>(simpleRows_.size()));
-        label = s.btnEndTask;
+        bool isExp = enableBtn && IsExplorerProcess(L"", simpleRows_[static_cast<size_t>(sel)].imagePath);
+        label = isExp ? s.ctxRestart : s.btnEndTask;
     } else {
         switch (settings_.activeTab) {
         case 0:
             enableBtn = tabProcesses_.HasSelection();
-            label = s.btnEndTask;
+            label = (enableBtn && tabProcesses_.IsSelectedExplorer()) ? s.ctxRestart : s.btnEndTask;
             break;
         case 1:
             enableBtn = true;
@@ -1197,7 +1198,7 @@ void MainWindow::UpdatePrimaryActionButton() {
             break;
         case 5:
             enableBtn = tabDetails_.HasSelection();
-            label = s.btnEndTask;
+            label = (enableBtn && tabDetails_.IsSelectedExplorer()) ? s.ctxRestart : s.btnEndTask;
             break;
         case 6:
             enableBtn = true;
@@ -1837,9 +1838,14 @@ void MainWindow::HandleSimpleListContextMenu(POINT screenPt) {
     const auto r = simpleRows_[static_cast<size_t>(sel)];
     const auto& s = GetStrings(settings_.langMode);
 
+    const bool isExplorer = IsExplorerProcess(L"", r.imagePath);
     HMENU hMenu = CreatePopupMenu();
     AppendMenuW(hMenu, MF_STRING, IDM_CTX_EXPAND_COLLAPSE, s.ctxSwitchTo);
-    AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
+    if (isExplorer) {
+        AppendMenuW(hMenu, MF_STRING, IDM_CTX_RESTART_EXPLORER, s.ctxRestart);
+    } else {
+        AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
+    }
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(hMenu, MF_STRING, IDM_CTX_GO_TO_DETAILS, s.ctxGoToDetails);
     UINT pFlags = MF_STRING | (r.imagePath.empty() ? MF_GRAYED : 0);
@@ -1851,7 +1857,11 @@ void MainWindow::HandleSimpleListContextMenu(POINT screenPt) {
 
     if (cmd == IDM_CTX_EXPAND_COLLAPSE) {
         SwitchToSimpleSelected();
-    } else if (cmd == IDM_CTX_END_TASK) {
+    } else if (cmd == IDM_CTX_RESTART_EXPLORER) {
+        ProcessMonitor::EndTask(r.pid);
+        ShellExecuteW(nullptr, L"open", L"explorer.exe", nullptr, nullptr, SW_SHOWNORMAL);
+        RefreshAll(true);
+    } else if (cmd == IDM_CTX_END_TASK && !isExplorer) {
         ProcessMonitor::EndTask(r.pid);
         RefreshAll(true);
     } else if (cmd == IDM_CTX_GO_TO_DETAILS) {
@@ -1894,17 +1904,30 @@ void MainWindow::HandleCommand(UINT id) {
         if (!settings_.moreDetails) {
             int sel = ListView_GetNextItem(hListSimple_, -1, LVNI_SELECTED);
             if (sel >= 0 && sel < static_cast<int>(simpleRows_.size())) {
-                ProcessMonitor::EndTask(simpleRows_[static_cast<size_t>(sel)].pid);
+                const auto& sr = simpleRows_[static_cast<size_t>(sel)];
+                if (IsExplorerProcess(L"", sr.imagePath)) {
+                    ProcessMonitor::EndTask(sr.pid);
+                    ShellExecuteW(nullptr, L"open", L"explorer.exe", nullptr, nullptr, SW_SHOWNORMAL);
+                } else {
+                    ProcessMonitor::EndTask(sr.pid);
+                }
                 if (settings_.minimizeOnUse) ShowWindow(hwnd_, SW_MINIMIZE);
                 RefreshAll(true);
             }
         } else {
             switch (settings_.activeTab) {
-            case 0: tabProcesses_.EndSelectedTask(); RefreshAll(true); break;
+            case 0:
+                if (tabProcesses_.IsSelectedExplorer()) tabProcesses_.RestartSelectedExplorer();
+                else tabProcesses_.EndSelectedTask();
+                RefreshAll(true);
+                break;
             case 1: ShellExecuteW(hwnd_, L"open", L"resmon.exe", nullptr, nullptr, SW_SHOWNORMAL); break;
             case 3: tabStartup_.ToggleSelected(); break;
             case 4: tabUsers_.DisconnectSelected(); break;
-            case 5: tabDetails_.EndSelectedTask(); break;
+            case 5:
+                if (tabDetails_.IsSelectedExplorer()) tabDetails_.RestartSelectedExplorer();
+                else tabDetails_.EndSelectedTask();
+                break;
             case 6: tabServices_.OpenServicesMsc(); break;
             case 7: tabLocks_.EndSelectedLockingProcess(); break;
             }
@@ -2043,7 +2066,11 @@ void MainWindow::HandleCommand(UINT id) {
         break;
     case IDA_DELETE_ACTION:
         if (!settings_.moreDetails) {
-            HandleCommand(IDC_BTN_PRIMARY_ACTION);
+            int sel = ListView_GetNextItem(hListSimple_, -1, LVNI_SELECTED);
+            if (sel >= 0 && sel < static_cast<int>(simpleRows_.size()) &&
+                !IsExplorerProcess(L"", simpleRows_[static_cast<size_t>(sel)].imagePath)) {
+                HandleCommand(IDC_BTN_PRIMARY_ACTION);
+            }
         } else if (settings_.activeTab == 0) {
             tabProcesses_.EndSelectedTask();
             RefreshAll(true);

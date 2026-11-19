@@ -9,6 +9,20 @@
 
 namespace taskman {
 
+inline bool IsExplorerProcess(const std::wstring& procName, const std::wstring& imagePath) {
+    if (!procName.empty() && _wcsicmp(procName.c_str(), L"explorer.exe") == 0) {
+        return true;
+    }
+    if (!imagePath.empty()) {
+        size_t pos = imagePath.find_last_of(L"\\/");
+        const wchar_t* base = (pos != std::wstring::npos) ? (imagePath.c_str() + pos + 1) : imagePath.c_str();
+        if (_wcsicmp(base, L"explorer.exe") == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline bool IsCurrentProcessElevated() {
     BOOL elevated = FALSE;
     HANDLE hToken = nullptr;

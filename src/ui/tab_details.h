@@ -25,8 +25,10 @@ public:
     LRESULT HandleNotify(NMHDR* nm);
 
     bool HasSelection() const;
+    bool IsSelectedExplorer() const;
     bool NeedsCommandLines() const;
     void EndSelectedTask();
+    void RestartSelectedExplorer();
     void EndSelectedProcessTree();
     void OpenSelectedProperties();
     void SelectProcessByPid(DWORD pid);

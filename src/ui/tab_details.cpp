@@ -289,8 +289,15 @@ bool TabDetails::HasSelection() const {
     return sel >= 0 && sel < static_cast<int>(procs_.size());
 }
 
+bool TabDetails::IsSelectedExplorer() const {
+    if (!HasSelection()) return false;
+    int sel = ListView_GetNextItem(hList_, -1, LVNI_SELECTED);
+    const auto& p = procs_[static_cast<size_t>(sel)];
+    return IsExplorerProcess(p.name, p.imagePath);
+}
+
 void TabDetails::EndSelectedTask() {
-    if (!HasSelection()) return;
+    if (!HasSelection() || IsSelectedExplorer()) return;
     int sel = ListView_GetNextItem(hList_, -1, LVNI_SELECTED);
     DWORD pid = procs_[static_cast<size_t>(sel)].pid;
     if (!ProcessMonitor::EndTask(pid)) {
@@ -301,8 +308,17 @@ void TabDetails::EndSelectedTask() {
     if (onRefreshNeeded) onRefreshNeeded();
 }
 
+void TabDetails::RestartSelectedExplorer() {
+    if (!HasSelection() || !IsSelectedExplorer()) return;
+    int sel = ListView_GetNextItem(hList_, -1, LVNI_SELECTED);
+    DWORD pid = procs_[static_cast<size_t>(sel)].pid;
+    ProcessMonitor::EndTask(pid);
+    ShellExecuteW(nullptr, L"open", L"explorer.exe", nullptr, nullptr, SW_SHOWNORMAL);
+    if (onRefreshNeeded) onRefreshNeeded();
+}
+
 void TabDetails::EndSelectedProcessTree() {
-    if (!HasSelection()) return;
+    if (!HasSelection() || IsSelectedExplorer()) return;
     int sel = ListView_GetNextItem(hList_, -1, LVNI_SELECTED);
     const auto p = procs_[static_cast<size_t>(sel)];
     const auto& s = GetStrings(settings_->langMode);
@@ -429,9 +445,14 @@ void TabDetails::HandleContextMenu(POINT screenPt) {
         AppendMenuW(hPrio, MF_STRING | (curPrio == o.cls ? MF_CHECKED : 0), o.id, o.label);
     }
 
+    const bool isExplorer = IsExplorerProcess(p.name, p.imagePath);
     HMENU hMenu = CreatePopupMenu();
-    AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
-    AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TREE, s.ctxEndTree);
+    if (isExplorer) {
+        AppendMenuW(hMenu, MF_STRING, IDM_CTX_RESTART_EXPLORER, s.ctxRestart);
+    } else {
+        AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
+        AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TREE, s.ctxEndTree);
+    }
     AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hPrio), s.ctxSetPriority);
     AppendMenuW(hMenu, MF_STRING, IDM_CTX_SET_AFFINITY, s.ctxSetAffinity);
     AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
@@ -445,7 +466,9 @@ void TabDetails::HandleContextMenu(POINT screenPt) {
     UINT cmd = TrackPopupMenu(hMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD, screenPt.x, screenPt.y, 0, hParent_, nullptr);
     DestroyMenu(hMenu);
 
-    if (cmd == IDM_CTX_END_TASK) {
+    if (cmd == IDM_CTX_RESTART_EXPLORER) {
+        RestartSelectedExplorer();
+    } else if (cmd == IDM_CTX_END_TASK) {
         EndSelectedTask();
     } else if (cmd == IDM_CTX_END_TREE) {
         EndSelectedProcessTree();

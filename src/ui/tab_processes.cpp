@@ -785,11 +785,32 @@ void TabProcesses::EndPidList(const std::vector<DWORD>& pids) {
     }
 }
 
+bool TabProcesses::IsSelectedExplorer() const {
+    if (!hList_) return false;
+    int sel = ListView_GetNextItem(hList_, -1, LVNI_SELECTED);
+    if (sel < 0 || sel >= static_cast<int>(rows_.size())) return false;
+    const auto& r = rows_[static_cast<size_t>(sel)];
+    if (r.kind == DisplayRow::CategoryHeader) return false;
+    return IsExplorerProcess(r.procName, r.imagePath);
+}
+
 void TabProcesses::EndSelectedTask() {
+    if (IsSelectedExplorer()) return;
     std::vector<DWORD> pids;
     std::wstring name, path;
     if (GetSelectedPidList(pids, name, path) < 0) return;
     EndPidList(pids);
+}
+
+void TabProcesses::RestartSelectedExplorer() {
+    if (!IsSelectedExplorer()) return;
+    std::vector<DWORD> pids;
+    std::wstring name, path;
+    if (GetSelectedPidList(pids, name, path) < 0) return;
+    for (DWORD pid : pids) {
+        ProcessMonitor::EndTask(pid);
+    }
+    ShellExecuteW(nullptr, L"open", L"explorer.exe", nullptr, nullptr, SW_SHOWNORMAL);
 }
 
 void TabProcesses::ExpandOrCollapseSelected(int forceState) {
@@ -974,11 +995,12 @@ void TabProcesses::HandleContextMenu(POINT screenPt) {
             AppendMenuW(hMenu, MF_STRING, IDM_CTX_SWITCH_TO, s.ctxSwitchTo);
         }
 
-        bool isExplorer = (_wcsicmp(r.procName.c_str(), L"explorer.exe") == 0);
+        bool isExplorer = IsExplorerProcess(r.procName, r.imagePath);
         if (isExplorer) {
             AppendMenuW(hMenu, MF_STRING, IDM_CTX_RESTART_EXPLORER, s.ctxRestart);
+        } else {
+            AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
         }
-        AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
 
         HMENU hResMenu = CreatePopupMenu();
         struct ResEntry { const wchar_t* label; bool asPct; UINT idVal; UINT idPct; } resItems[] = {

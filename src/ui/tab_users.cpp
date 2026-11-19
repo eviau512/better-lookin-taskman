@@ -367,7 +367,12 @@ void TabUsers::HandleContextMenu(POINT screenPt) {
         if (switchWnd) {
             AppendMenuW(hMenu, MF_STRING, IDM_CTX_SWITCH_TO, s.ctxSwitchTo);
         }
-        AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
+        bool isExplorer = IsExplorerProcess(r.title, r.imagePath);
+        if (isExplorer) {
+            AppendMenuW(hMenu, MF_STRING, IDM_CTX_RESTART_EXPLORER, s.ctxRestart);
+        } else {
+            AppendMenuW(hMenu, MF_STRING, IDM_CTX_END_TASK, s.ctxEndTask);
+        }
         AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(hMenu, MF_STRING, IDM_CTX_GO_TO_DETAILS, s.ctxGoToDetails);
         UINT pFlags = MF_STRING | (r.imagePath.empty() ? MF_GRAYED : 0);
@@ -404,9 +409,16 @@ void TabUsers::HandleContextMenu(POINT screenPt) {
     case IDM_CTX_USER_COLLAPSE:
         ExpandAll(false);
         break;
-    case IDM_CTX_END_TASK:
+    case IDM_CTX_RESTART_EXPLORER:
         ProcessMonitor::EndTask(r.pid);
+        ShellExecuteW(nullptr, L"open", L"explorer.exe", nullptr, nullptr, SW_SHOWNORMAL);
         if (onRefreshNeeded) onRefreshNeeded();
+        break;
+    case IDM_CTX_END_TASK:
+        if (!IsExplorerProcess(r.title, r.imagePath)) {
+            ProcessMonitor::EndTask(r.pid);
+            if (onRefreshNeeded) onRefreshNeeded();
+        }
         break;
     case IDM_CTX_GO_TO_DETAILS:
         if (onGoToDetails) onGoToDetails(r.pid);

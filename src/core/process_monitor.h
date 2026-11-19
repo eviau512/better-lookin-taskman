@@ -67,6 +67,7 @@ struct ProcessTotals {
     double memoryPercent = 0.0;
     double diskPercent = 0.0;
     double networkPercent = 0.0;
+    double networkBytesPerSec = 0.0;
     double gpuPercent = 0.0;
     uint64_t totalMemoryBytes = 0;
     uint64_t usedMemoryBytes = 0;
@@ -106,6 +107,7 @@ private:
         ULONGLONG createTime = 0;
         ULONGLONG cpuTime100ns = 0;
         ULONGLONG ioTransferBytes = 0;
+        ULONGLONG ioOtherBytes = 0;
         double prevPowerScore = 0.0;
     };
 

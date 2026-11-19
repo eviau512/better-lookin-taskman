@@ -25,7 +25,9 @@ public:
 
     // Actions & Shortcuts
     bool HasSelection() const;
+    bool IsSelectedExplorer() const;
     void EndSelectedTask();
+    void RestartSelectedExplorer();
     void ExpandOrCollapseSelected(int forceState = -1); // -1 toggle, 0 collapse, 1 expand
     void ExpandAll(bool expand);
     void OpenSelectedProperties();
