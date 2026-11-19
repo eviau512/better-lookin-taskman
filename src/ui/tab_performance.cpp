@@ -365,10 +365,164 @@ int TabPerformance::GetSidebarPreferredHeight() const {
 }
 
 int TabPerformance::GetMinimumRequiredWidth() const {
-    if (!hwnd_) return 840;
-    // Sidebar + splitter + right pane horizontal padding (20*2) + min usable chart & stat/kv width (550dp)
+    if (!hwnd_) return 860;
     int sideW = GetSidebarPreferredWidth();
-    return sideW + DpiScale(hwnd_, 590);
+    int maxRw = DpiScale(hwnd_, 550);
+
+    HDC hdc = GetDC(hwnd_);
+    if (hdc && perf_ && settings_) {
+        ThemeManager& tm = ThemeManager::Instance();
+        const Strings& s = GetStrings(settings_->langMode);
+        const int valCap = DpiScale(hwnd_, 380);
+        const int hwCap = DpiScale(hwnd_, 360);
+
+        auto measureStatColW = [&](int valPt, std::initializer_list<const wchar_t*> labels,
+                                   std::initializer_list<const wchar_t*> values) -> int {
+            int w = MeasureMaxTextW(hdc, hwnd_, 9, labels);
+            w = (std::max)(w, MeasureMaxTextW(hdc, hwnd_, valPt, values));
+            return w + DpiScale(hwnd_, 6);
+        };
+
+        auto considerPage = [&](int leftUsedW,
+                                std::initializer_list<const wchar_t*> keys,
+                                const std::vector<std::wstring>& vals,
+                                const std::wstring& hwModel) {
+            int maxKeyW = MeasureMaxTextW(hdc, hwnd_, 10, keys);
+            int maxValW = 0;
+            for (const auto& v : vals) {
+                if (v.empty()) continue;
+                int vw = tm.MeasureTextWidth(hdc, hwnd_, 10, false, v.c_str(), -1);
+                maxValW = (std::max)(maxValW, (std::min)(valCap, vw));
+            }
+            int desiredKw = maxKeyW + DpiScale(hwnd_, 20);
+            int minAvail = (std::max)(desiredKw + maxValW + DpiScale(hwnd_, 12),
+                                      (desiredKw * 100 + 47) / 48);
+            int neededRw = (std::max)(leftUsedW + DpiScale(hwnd_, 28) + minAvail,
+                                      (leftUsedW * 100 + 51) / 52);
+            if (!hwModel.empty()) {
+                int hwW = (std::min)(hwCap, tm.MeasureTextWidth(hdc, hwnd_, 12, false, hwModel.c_str(), -1));
+                int headerRw = (hwW * 100 + 61) / 62 + DpiScale(hwnd_, 10);
+                neededRw = (std::max)(neededRw, headerRw);
+            }
+            maxRw = (std::max)(maxRw, neededRw);
+        };
+
+        // 1. CPU
+        {
+            const auto& c = perf_->Cpu();
+            int colGap = DpiScale(hwnd_, 20);
+            std::wstring utilStr = FormatPercent(c.utilization, 0);
+            wchar_t spdBuf[32], baseBuf[32];
+            swprintf_s(spdBuf, L"%.2f GHz", c.currentSpeedGhz);
+            swprintf_s(baseBuf, L"%.2f GHz", c.baseSpeedGhz);
+            std::wstring procStr = std::to_wstring(c.processes);
+            std::wstring thrStr = std::to_wstring(c.threads);
+            std::wstring hndStr = std::to_wstring(c.handles);
+            std::wstring upStr = FormatUptime(c.uptimeMs);
+
+            int w10 = measureStatColW(16, { s.perfUtilization }, { L"100%", utilStr.c_str() });
+            int w11 = measureStatColW(16, { s.perfSpeed }, { L"9.99 GHz", spdBuf });
+            int w20 = measureStatColW(15, { s.perfProcesses }, { L"9999", procStr.c_str() });
+            int w21 = measureStatColW(15, { s.perfThreads }, { L"99999", thrStr.c_str() });
+            int w22 = measureStatColW(15, { s.perfHandles }, { L"999999", hndStr.c_str() });
+            int col0W = (std::max)(w10, w20);
+            int upW = measureStatColW(15, { s.perfUptime }, { L"00:00:00:00", upStr.c_str() });
+            int leftUsedW = (std::max)({ col0W + colGap + w11, col0W + colGap + w21 + colGap + w22, upW });
+
+            considerPage(leftUsedW,
+                         { s.perfBaseSpeed, s.perfSockets, s.perfCores, s.perfLogicalProcs,
+                           s.perfVirtualization, s.perfL1Cache, s.perfL2Cache, s.perfL3Cache },
+                         { baseBuf, std::to_wstring(c.sockets), std::to_wstring(c.cores),
+                           std::to_wstring(c.logicalProcessors),
+                           c.virtualization ? s.perfEnabled : s.perfDisabled,
+                           FormatCacheSize(c.l1CacheBytes), FormatCacheSize(c.l2CacheBytes),
+                           FormatCacheSize(c.l3CacheBytes) },
+                         c.name);
+        }
+
+        // 2. Memory
+        {
+            const auto& m = perf_->Memory();
+            int colGap = DpiScale(hwnd_, 22);
+            std::wstring inUseStr = FormatMemGB(m.inUseBytes);
+            std::wstring availStr = FormatMemGB(m.availableBytes);
+            std::wstring commStr = FormatMemPairGB(m.committedBytes, m.commitLimitBytes);
+            std::wstring cachedStr = FormatMemGB(m.cachedBytes);
+            std::wstring pagedStr = FormatBytesAuto(m.pagedPoolBytes);
+            std::wstring nonPagedStr = FormatBytesAuto(m.nonPagedPoolBytes);
+            int col0W = measureStatColW(15, { s.perfInUse, s.perfCommitted, s.perfPagedPool },
+                                        { L"99.9/99.9 GB", inUseStr.c_str(), commStr.c_str(), pagedStr.c_str() });
+            int col1W = measureStatColW(15, { s.perfAvailable, s.perfCached, s.perfNonPagedPool },
+                                        { L"99.9 GB", availStr.c_str(), cachedStr.c_str(), nonPagedStr.c_str() });
+            std::wstring spdStr = m.speedMhz > 0 ? (std::to_wstring(m.speedMhz) + L" MHz") : L"-";
+            std::wstring slotStr = m.slotsTotal > 0
+                ? (std::to_wstring(m.slotsUsed) + L" / " + std::to_wstring(m.slotsTotal))
+                : L"-";
+            considerPage(col0W + colGap + col1W,
+                         { s.perfSpeed, s.perfSlotsUsed, s.perfFormFactor, s.perfHwReserved },
+                         { spdStr, slotStr, m.formFactor.empty() ? L"-" : m.formFactor,
+                           FormatBytesAuto(m.hardwareReservedBytes) },
+                         FormatMemGB(m.installedBytes > 0 ? m.installedBytes : m.totalBytes));
+        }
+
+        // 3. Disks
+        for (const auto& d : perf_->Disks()) {
+            int colGap = DpiScale(hwnd_, 22);
+            std::wstring actStr = FormatPercent(d.activeTimePct, 0);
+            wchar_t avgBuf[32];
+            swprintf_s(avgBuf, L"%.1f ms", d.avgResponseMs);
+            std::wstring readStr = FormatDiskSpeed(d.readBytesPerSec);
+            std::wstring writeStr = FormatDiskSpeed(d.writeBytesPerSec);
+            int col0W = measureStatColW(16, { s.perfActiveTime, s.perfReadSpeed },
+                                        { L"100%", L"999.9 MB/s", actStr.c_str(), readStr.c_str() });
+            int col1W = measureStatColW(16, { s.perfAvgResponse, s.perfWriteSpeed },
+                                        { L"999.9 ms", L"999.9 MB/s", avgBuf, writeStr.c_str() });
+            considerPage(col0W + colGap + col1W,
+                         { s.perfCapacity, s.perfFormatted, s.perfSystemDisk, s.perfPageFile, s.perfType },
+                         { FormatMemGB(d.capacityBytes), FormatMemGB(d.formattedBytes),
+                           d.isSystemDisk ? s.perfYes : s.perfNo,
+                           d.hasPageFile ? s.perfYes : s.perfNo, d.type },
+                         d.model);
+        }
+
+        // 4. Networks
+        for (const auto& n : perf_->Networks()) {
+            int colGap = DpiScale(hwnd_, 22);
+            std::wstring sendStr = FormatNetSpeedAuto(n.sendBytesPerSec);
+            std::wstring recvStr = FormatNetSpeedAuto(n.recvBytesPerSec);
+            int col0W = measureStatColW(15, { s.perfSend }, { L"999.9 Mbps", sendStr.c_str() });
+            int col1W = measureStatColW(15, { s.perfReceive }, { L"999.9 Mbps", recvStr.c_str() });
+            considerPage(col0W + colGap + col1W,
+                         { s.perfAdapterName, s.perfDnsName, s.perfConnType, s.perfIpv4, s.perfIpv6 },
+                         { n.adapterName, n.dnsName.empty() ? L"-" : n.dnsName, n.connType,
+                           n.ipv4.empty() ? L"-" : n.ipv4, n.ipv6.empty() ? L"-" : n.ipv6 },
+                         n.adapterName);
+        }
+
+        // 5. GPUs
+        for (const auto& g : perf_->Gpus()) {
+            int colGap = DpiScale(hwnd_, 22);
+            std::wstring utilStr = FormatPercent(g.utilization, 0);
+            std::wstring dedStr = FormatMemPairGB(g.dedicatedUsed, g.dedicatedTotal);
+            std::wstring shdStr = FormatMemPairGB(g.sharedUsed, g.sharedTotal);
+            std::wstring totStr = FormatMemPairGB(g.dedicatedUsed + g.sharedUsed, g.dedicatedTotal + g.sharedTotal);
+            int col0W = measureStatColW(16, { s.perfUtilization, s.perfDedGpuMem, s.perfGpuMemory },
+                                        { L"100%", L"99.9/99.9 GB", utilStr.c_str(), dedStr.c_str(), totStr.c_str() });
+            int col1W = measureStatColW(14, { s.perfSharedGpuMem, g.hasTemperature ? s.perfGpuTemp : L"" },
+                                        { L"99.9/99.9 GB", shdStr.c_str() });
+            considerPage(col0W + colGap + col1W,
+                         { s.perfDriverVer, s.perfDriverDate, s.perfDxVersion, s.perfPhysLocation },
+                         { g.driverVersion.empty() ? L"-" : g.driverVersion,
+                           g.driverDate.empty() ? L"-" : g.driverDate,
+                           g.directXVersion.empty() ? L"-" : g.directXVersion,
+                           g.physLocation.empty() ? L"-" : g.physLocation },
+                         g.name);
+        }
+    }
+    if (hdc) ReleaseDC(hwnd_, hdc);
+
+    // Sidebar + 1px splitter + right pane horizontal padding (20dp * 2) + dynamic max right pane width
+    return sideW + 1 + DpiScale(hwnd_, 40) + maxRw;
 }
 
 int TabPerformance::GetMinimumRequiredHeight() const {

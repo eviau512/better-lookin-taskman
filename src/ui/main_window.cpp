@@ -147,6 +147,7 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
     int w = MulDiv(1020, static_cast<int>(sysDpi), 96);
     int h = MulDiv(700, static_cast<int>(sysDpi), 96);
+    bool hasSavedRect = false;
     if (!settings_.moreDetails) {
         w = MulDiv(480, static_cast<int>(sysDpi), 96);
         h = MulDiv(440, static_cast<int>(sysDpi), 96);
@@ -163,6 +164,7 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
             h = std::clamp<int>(r.bottom - r.top, MulDiv(600, static_cast<int>(sysDpi), 96), workH);
             x = std::clamp<int>(r.left, mi.rcWork.left, mi.rcWork.right - 250);
             y = std::clamp<int>(r.top, mi.rcWork.top, mi.rcWork.bottom - 200);
+            hasSavedRect = true;
         }
     }
 
@@ -213,6 +215,7 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         totalHandles += p.handleCount;
     }
     perfMon_.Sample(static_cast<DWORD>(procMon_.Processes().size()), totalThreads, totalHandles);
+    tabPerf_.UpdateData(perfMon_);
     appHistory_.Accumulate(procMon_.Processes(), 0.0);
 
     SwitchTab(settings_.activeTab);
@@ -222,11 +225,26 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         GetWindowRect(hwnd_, &curWrc);
         int minW = GetMinimumDetailedWidth();
         int minH = DpiScale(hwnd_, 600);
-        if ((curWrc.right - curWrc.left) < minW || (curWrc.bottom - curWrc.top) < minH) {
-            SetWindowPos(hwnd_, nullptr, 0, 0,
-                         std::max<int>(curWrc.right - curWrc.left, minW),
-                         std::max<int>(curWrc.bottom - curWrc.top, minH),
-                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        int targetW = hasSavedRect ? std::max<int>(curWrc.right - curWrc.left, minW) : minW;
+        int targetH = std::max<int>(curWrc.bottom - curWrc.top, minH);
+        int targetX = curWrc.left;
+        int targetY = curWrc.top;
+        HMONITOR hMon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi{ sizeof(mi) };
+        if (GetMonitorInfoW(hMon, &mi)) {
+            targetW = std::min<int>(targetW, mi.rcWork.right - mi.rcWork.left);
+            targetH = std::min<int>(targetH, mi.rcWork.bottom - mi.rcWork.top);
+            if (targetX + targetW > mi.rcWork.right) {
+                targetX = std::max<int>(mi.rcWork.left, mi.rcWork.right - targetW);
+            }
+            if (targetY + targetH > mi.rcWork.bottom) {
+                targetY = std::max<int>(mi.rcWork.top, mi.rcWork.bottom - targetH);
+            }
+        }
+        if (targetW != (curWrc.right - curWrc.left) || targetH != (curWrc.bottom - curWrc.top) ||
+            targetX != curWrc.left || targetY != curWrc.top) {
+            SetWindowPos(hwnd_, nullptr, targetX, targetY, targetW, targetH,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
         }
     }
     SetUpdateSpeed(settings_.updateSpeed);
@@ -693,7 +711,16 @@ int MainWindow::GetMinimumDetailedWidth() const {
 
     int perfMinClient = tabPerf_.GetMinimumRequiredWidth();
     int neededClient = std::max(perfMinClient, tabsMinClient);
-    return std::max(baseMin, neededClient + frameW);
+    int result = std::max(baseMin, neededClient + frameW);
+    HMONITOR hMon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    if (GetMonitorInfoW(hMon, &mi)) {
+        int workCap = (mi.rcWork.right - mi.rcWork.left) - DpiScale(hwnd_, 16);
+        if (workCap > DpiScale(hwnd_, 640)) {
+            result = std::min(result, workCap);
+        }
+    }
+    return result;
 }
 
 void MainWindow::LayoutFooterButtons() {
@@ -823,7 +850,7 @@ void MainWindow::ToggleMoreDetails() {
         bool validSaved = (settings_.windowRect.left > -32000 && settings_.windowRect.top > -32000 &&
                            (settings_.windowRect.right - settings_.windowRect.left) >= DpiScale(hwnd_, 480) &&
                            (settings_.windowRect.bottom - settings_.windowRect.top) >= DpiScale(hwnd_, 340));
-        int w = validSaved ? (settings_.windowRect.right - settings_.windowRect.left) : DpiScale(hwnd_, 1020);
+        int w = validSaved ? (settings_.windowRect.right - settings_.windowRect.left) : minW;
         int h = validSaved ? (settings_.windowRect.bottom - settings_.windowRect.top) : DpiScale(hwnd_, 700);
         SetWindowPos(hwnd_, nullptr, 0, 0, std::max<int>(w, minW), std::max<int>(h, minH),
                      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
