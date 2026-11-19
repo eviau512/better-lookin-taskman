@@ -20,6 +20,8 @@ public:
     void RebuildColumns();
 
     void RefreshData(const ProcessMonitor& mon);
+    void SetFilter(const std::wstring& query);
+    const std::wstring& Filter() const { return filterText_; }
 
     // Actions & Shortcuts
     bool HasSelection() const;
@@ -89,6 +91,8 @@ private:
 
     int sortCol_ = 2; // Default sort by CPU descending or Name? Win10 defaults unsorted/Name or CPU; Name ascending or user clicked
     bool sortAsc_ = true;
+    std::wstring filterText_;
+    std::wstring filterLower_;
     uint64_t totalMemBytes_ = 1;
     ProcessTotals lastTotals_{};
 

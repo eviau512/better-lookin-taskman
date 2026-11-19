@@ -24,6 +24,8 @@ public:
     void SetSummaryMode(PerfSummaryMode mode, bool notifyParent = true);
     int GetSidebarPreferredWidth() const;
     int GetSidebarPreferredHeight() const;
+    int GetMinimumRequiredWidth() const;
+    int GetMinimumRequiredHeight() const;
     RECT GetRightGraphScreenRect() const;
 
     HWND Hwnd() const { return hwnd_; }

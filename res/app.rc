@@ -26,6 +26,7 @@ BEGIN
     "T",        IDA_ALT_T,              VIRTKEY, ALT
     "O",        IDA_ALT_O,              VIRTKEY, ALT
     "N",        IDM_FILE_NEW_TASK,      VIRTKEY, ALT
+    "F",        IDA_FIND,               VIRTKEY, CONTROL
     VK_ESCAPE,  IDA_ESCAPE,             VIRTKEY
     VK_F1,      IDM_HELP_TOPICS,        VIRTKEY
 END

@@ -325,6 +325,11 @@ struct Strings {
     const wchar_t* lockOwnerUnknown;
     const wchar_t* lockReadOnlyTag;
     const wchar_t* lockSummaryFmt;
+
+    // Footer Search
+    const wchar_t* searchCueProcesses;
+    const wchar_t* searchCueDetails;
+    const wchar_t* searchCueServices;
 };
 
 inline LangMode GetEffectiveLang(LangMode mode) {
@@ -655,7 +660,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"This process is protected as a critical OS/core component and cannot be terminated here.",
         L"Unknown",
         L"   [Read-only]",
-        L"%ls %d processes (%d protected core, %llu ms)"
+        L"%ls %d processes (%d protected core, %llu ms)",
+        L"Search processes (name, PID)...",
+        L"Search details (name, PID, command)...",
+        L"Search services (name, PID, group)..."
     };
 
     static const Strings kZh = {
@@ -965,7 +973,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"该进程属于核心系统/受保护进程（强行结束可能导致系统崩溃或被内核拒绝），已禁止在此终止。",
         L"未知 / 无权读取",
         L"   [只读属性]",
-        L"%ls %d 个程序（不可结束核心进程 %d 个，耗时 %llu ms）"
+        L"%ls %d 个程序（不可结束核心进程 %d 个，耗时 %llu ms）",
+        L"搜索进程（名称 / PID）...",
+        L"搜索详细信息（名称 / PID / 命令行）...",
+        L"搜索服务（名称 / PID / 组）..."
     };
 
     static const Strings kZhTw = {
@@ -1275,7 +1286,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"此處理程序屬於核心系統/受保護元件（強制終止可能導致系統當機或遭核心拒絕），已禁止在此終止。",
         L"未知 / 無權讀取",
         L"   [唯讀屬性]",
-        L"%ls %d 個程式（不可結束核心程序 %d 個，耗時 %llu ms）"
+        L"%ls %d 個程式（不可結束核心程序 %d 個，耗時 %llu ms）",
+        L"搜尋處理程序（名稱 / PID）...",
+        L"搜尋詳細資料（名稱 / PID / 命令列）...",
+        L"搜尋服務（名稱 / PID / 群組）..."
     };
 
     static const Strings kJa = {
@@ -1585,7 +1599,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"このプロセスは OS コアまたは保護プロセスであるため、ここからは終了できません。",
         L"不明 / アクセス不可",
         L"   [読み取り専用]",
-        L"%ls %d プロセス (保護されたコア %d 個、%llu ms)"
+        L"%ls %d プロセス (保護されたコア %d 個、%llu ms)",
+        L"プロセスを検索 (名前 / PID)...",
+        L"詳細を検索 (名前 / PID / コマンド)...",
+        L"サービスを検索 (名前 / PID / グループ)..."
     };
 
     static const Strings kKo = {
@@ -1895,7 +1912,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"이 프로세스는 핵심 OS/보호 구성 요소이므로 여기서 종료할 수 없습니다.",
         L"알 수 없음",
         L"   [읽기 전용]",
-        L"%ls %d개 프로세스 (보호된 핵심 %d개, %llu ms)"
+        L"%ls %d개 프로세스 (보호된 핵심 %d개, %llu ms)",
+        L"프로세스 검색 (이름 / PID)...",
+        L"세부 정보 검색 (이름 / PID / 명령)...",
+        L"서비스 검색 (이름 / PID / 그룹)..."
     };
 
     static const Strings kDe = {
@@ -2205,7 +2225,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"Dieser Prozess ist ein kritischer OS-Kernprozess und kann hier nicht beendet werden.",
         L"Unbekannt",
         L"   [Schreibgeschützt]",
-        L"%ls %d Prozesse (%d geschützte Kerne, %llu ms)"
+        L"%ls %d Prozesse (%d geschützte Kerne, %llu ms)",
+        L"Prozesse suchen (Name, PID)...",
+        L"Details suchen (Name, PID, Befehl)...",
+        L"Dienste suchen (Name, PID, Gruppe)..."
     };
 
     static const Strings kFr = {
@@ -2515,7 +2538,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"Ce processus système critique est protégé et ne peut pas être arrêté ici.",
         L"Inconnu",
         L"   [Lecture seule]",
-        L"%ls %d processus (%d noyau protégé, %llu ms)"
+        L"%ls %d processus (%d noyau protégé, %llu ms)",
+        L"Rechercher un processus (nom, PID)...",
+        L"Rechercher dans les détails (nom, PID)...",
+        L"Rechercher un service (nom, PID)..."
     };
 
     static const Strings kEs = {
@@ -2825,7 +2851,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"Este proceso crítico del sistema está protegido y no se puede finalizar aquí.",
         L"Desconocido",
         L"   [Solo lectura]",
-        L"%ls %d procesos (%d críticos protegidos, %llu ms)"
+        L"%ls %d procesos (%d críticos protegidos, %llu ms)",
+        L"Buscar procesos (nombre, PID)...",
+        L"Buscar detalles (nombre, PID, comando)...",
+        L"Buscar servicios (nombre, PID, grupo)..."
     };
 
     static const Strings kRu = {
@@ -3135,7 +3164,10 @@ inline const Strings& GetStrings(LangMode mode) {
         L"Этот системный процесс критически важен для ОС и не может быть завершен здесь.",
         L"Неизвестно",
         L"   [Только чтение]",
-        L"%ls %d процессов (защищено ядром %d, %llu мс)"
+        L"%ls %d процессов (защищено ядром %d, %llu мс)",
+        L"Поиск процессов (имя, PID)...",
+        L"Поиск сведений (имя, PID, команда)...",
+        L"Поиск служб (имя, PID, группа)..."
     };
 
     switch (GetEffectiveLang(mode)) {

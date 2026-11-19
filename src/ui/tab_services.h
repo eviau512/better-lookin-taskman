@@ -20,6 +20,8 @@ public:
     void SaveColumnWidths();
 
     void RefreshData(const ServiceManager& mgr);
+    void SetFilter(const std::wstring& query);
+    const std::wstring& Filter() const { return filterText_; }
     LRESULT HandleNotify(NMHDR* nm);
 
     bool HasSelection() const;
@@ -37,6 +39,7 @@ public:
     std::function<void()> onColumnsChanged;
 
 private:
+    void ApplyFilterAndSort();
     void SortRows();
 
     HWND hParent_ = nullptr;
@@ -44,7 +47,10 @@ private:
     ThemedListView themedLv_;
     AppSettings* settings_ = nullptr;
 
+    std::vector<ServiceItem> allItems_;
     std::vector<ServiceItem> items_;
+    std::wstring filterText_;
+    std::wstring filterLower_;
     int sortCol_ = 0;
     bool sortAsc_ = true;
 };

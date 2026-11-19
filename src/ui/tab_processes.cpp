@@ -290,6 +290,14 @@ static std::wstring BestProcessLabel(const ProcessInfo& p) {
     return p.name;
 }
 
+void TabProcesses::SetFilter(const std::wstring& query) {
+    filterText_ = query;
+    std::wstring nextLower = TrimLowerCopy(query);
+    if (nextLower == filterLower_) return;
+    filterLower_ = std::move(nextLower);
+    ApplyCurrentRows();
+}
+
 void TabProcesses::RefreshData(const ProcessMonitor& mon) {
     lastMon_ = &mon;
     lastTotals_ = mon.Totals();
@@ -365,6 +373,8 @@ void TabProcesses::ApplyCurrentRows() {
     if (newSel >= 0 && newSel != selIdx) {
         ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
         ListView_SetItemState(hList_, newSel, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    } else if (newSel < 0 && selIdx >= 0) {
+        ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
     }
     InvalidateRect(hList_, nullptr, FALSE);
 }
@@ -560,6 +570,45 @@ void TabProcesses::RebuildRows(const ProcessMonitor& mon) {
         }
     }
 
+    const bool isFiltering = !filterLower_.empty();
+    if (isFiltering) {
+        auto procMatches = [&](const ProcessInfo& p) -> bool {
+            if (ContainsNoCase(p.name, filterLower_) ||
+                ContainsNoCase(p.description, filterLower_) ||
+                ContainsNoCase(p.windowTitle, filterLower_) ||
+                ContainsNoCase(p.imagePath, filterLower_) ||
+                ContainsNoCase(std::to_wstring(p.pid), filterLower_)) {
+                return true;
+            }
+            for (const auto& wt : p.windowTitles) {
+                if (ContainsNoCase(wt, filterLower_)) return true;
+            }
+            return false;
+        };
+
+        std::vector<GroupBucket> filtered;
+        filtered.reserve(buckets.size());
+        for (auto& b : buckets) {
+            if (ContainsNoCase(b.title, filterLower_)) {
+                filtered.push_back(std::move(b));
+                continue;
+            }
+            std::vector<const ProcessInfo*> kept;
+            for (const auto* m : b.members) {
+                if (m && procMatches(*m)) kept.push_back(m);
+            }
+            if (kept.empty()) continue;
+
+            GroupBucket nb;
+            nb.category = b.category;
+            nb.groupKey = b.groupKey;
+            nb.title = b.title;
+            for (const auto* m : kept) addMemberToBucket(nb, m);
+            filtered.push_back(std::move(nb));
+        }
+        buckets = std::move(filtered);
+    }
+
     auto cmpBuckets = [this](const GroupBucket& a, const GroupBucket& b) -> bool {
         int cmp = 0;
         switch (sortCol_) {
@@ -582,7 +631,8 @@ void TabProcesses::RebuildRows(const ProcessMonitor& mon) {
         const bool isAppWithWindowChildren =
             (b.category == ProcessCategory::App && b.members.size() == 1 && !b.members[0]->windowTitles.empty());
         const bool hasChevron = (b.members.size() > 1) || isAppWithWindowChildren;
-        const bool isExp = hasChevron && (expandedGroups_.count(b.groupKey) > 0);
+        const bool titleMatched = !isFiltering || ContainsNoCase(b.title, filterLower_);
+        const bool isExp = hasChevron && ((expandedGroups_.count(b.groupKey) > 0) || (isFiltering && !titleMatched));
 
         DisplayRow row;
         row.kind = hasChevron ? DisplayRow::GroupParent : DisplayRow::SingleOrChild;
@@ -686,10 +736,10 @@ void TabProcesses::RebuildRows(const ProcessMonitor& mon) {
             hdr.kind = DisplayRow::CategoryHeader;
             hdr.category = static_cast<ProcessCategory>(c);
             hdr.title = std::wstring(catTitles[c]) + L" (" + std::to_wstring(catBuckets[c].size()) + L")";
-            hdr.expanded = !collapsedCategories_[c];
+            hdr.expanded = isFiltering ? true : !collapsedCategories_[c];
             rows_.push_back(std::move(hdr));
 
-            if (!collapsedCategories_[c]) {
+            if (isFiltering || !collapsedCategories_[c]) {
                 for (const auto& b : catBuckets[c]) {
                     emitBucket(b);
                 }

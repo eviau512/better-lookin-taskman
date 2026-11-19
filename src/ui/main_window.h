@@ -58,6 +58,10 @@ private:
     void UpdatePrimaryActionButton();
     void LayoutFooterButtons();
     void SaveAllTabColumnWidths();
+    bool IsSearchTabActive() const;
+    void SyncSearchBoxState();
+    void OnSearchTextChanged();
+    int GetMinimumDetailedWidth() const;
 
     void RefreshAll(bool force);
     void RefreshActiveView(bool allowManagerRefresh, ULONGLONG minStaleMs = 4000);
@@ -84,8 +88,13 @@ private:
     // Footer & simple controls
     HWND hBtnMore_ = nullptr;
     HWND hBtnAction_ = nullptr;
+    HWND hSearchEdit_ = nullptr;
     HWND hListSimple_ = nullptr;
     ThemedListView simpleLv_;
+    bool suppressSearchSync_ = false;
+    bool hoverSearchClear_ = false;
+    RECT searchFrameRect_{};
+    RECT searchClearRect_{};
 
     struct SimpleAppRow {
         DWORD pid = 0;

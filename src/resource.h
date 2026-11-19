@@ -62,6 +62,7 @@
 #define IDA_ALT_T                   40409
 #define IDA_ALT_O                   40410
 #define IDA_ESCAPE                  40411
+#define IDA_FIND                    40412
 
 // Tray menu commands
 #define IDM_TRAY_RESTORE            40501
@@ -141,6 +142,7 @@
 #define IDC_LOCKS_BTN_FOLDER        1015
 #define IDC_LOCKS_BTN_SCAN          1016
 #define IDC_LOCKS_BTN_ELEVATE       1017
+#define IDC_EDIT_FOOTER_SEARCH      1018
 
 // Dialog IDs
 #define IDD_RUN_TASK                201

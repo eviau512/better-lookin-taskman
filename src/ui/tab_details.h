@@ -20,6 +20,8 @@ public:
     void SaveColumnWidths();
 
     void RefreshData(const ProcessMonitor& mon);
+    void SetFilter(const std::wstring& query);
+    const std::wstring& Filter() const { return filterText_; }
     LRESULT HandleNotify(NMHDR* nm);
 
     bool HasSelection() const;
@@ -40,6 +42,7 @@ public:
     std::function<void()> onColumnsChanged;
 
 private:
+    void ApplyFilterAndSort();
     void SortRows();
     void HandleHeaderContextMenu(POINT screenPt);
 
@@ -48,7 +51,10 @@ private:
     ThemedListView themedLv_;
     AppSettings* settings_ = nullptr;
 
+    std::vector<ProcessInfo> allProcs_;
     std::vector<ProcessInfo> procs_;
+    std::wstring filterText_;
+    std::wstring filterLower_;
     std::vector<int> visibleCols_; // DetailsColumnId
     int sortColId_ = DCOL_NAME;
     bool sortAsc_ = true;

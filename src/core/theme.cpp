@@ -62,6 +62,28 @@ typedef struct tagUAHDRAWMENUITEM {
     UAHMENUITEM umi;
 } UAHDRAWMENUITEM;
 
+typedef struct tagUAHMEASUREMENUITEM {
+    MEASUREITEMSTRUCT mis;
+    UAHMENU um;
+    UAHMENUITEM umi;
+} UAHMEASUREMENUITEM;
+
+static std::wstring StripMenuMnemonic(const wchar_t* text) {
+    std::wstring out;
+    if (!text) return out;
+    for (size_t i = 0; text[i]; ++i) {
+        if (text[i] == L'&') {
+            if (text[i + 1] == L'&') {
+                out.push_back(L'&');
+                ++i;
+            }
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
 static ThemePalette MakeLightPalette() {
     ThemePalette p{};
     p.isDark = false;
@@ -336,7 +358,7 @@ bool ThemeManager::HandleMenuBarMessage(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         if (pUDMI->dis.itemState & ODS_NOACCEL) dtFlags |= DT_HIDEPREFIX;
 
         int oldBk = SetBkMode(pUDMI->dis.hDC, TRANSPARENT);
-        DrawModernText(pUDMI->dis.hDC, hwnd, 9, false, text, pUDMI->dis.rcItem, dtFlags, fg);
+        DrawModernText(pUDMI->dis.hDC, hwnd, 10, false, text, pUDMI->dis.rcItem, dtFlags, fg);
         SetBkMode(pUDMI->dis.hDC, oldBk);
 
         outResult = 0;
@@ -344,6 +366,30 @@ bool ThemeManager::HandleMenuBarMessage(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     }
     case WM_UAHMEASUREMENUITEM: {
         outResult = DefWindowProcW(hwnd, msg, wParam, lParam);
+        auto* pUMM = reinterpret_cast<UAHMEASUREMENUITEM*>(lParam);
+        if (pUMM && pUMM->um.hmenu && pUMM->um.hmenu == GetMenu(hwnd)) {
+            wchar_t text[128] = {};
+            MENUITEMINFOW mii{ sizeof(mii) };
+            mii.fMask = MIIM_STRING;
+            mii.dwTypeData = text;
+            mii.cch = ARRAYSIZE(text);
+            if (GetMenuItemInfoW(pUMM->um.hmenu, pUMM->umi.iPosition, TRUE, &mii) && text[0]) {
+                std::wstring clean = StripMenuMnemonic(text);
+                HDC hdc = pUMM->um.hdc;
+                bool releaseDc = false;
+                if (!hdc) {
+                    hdc = GetWindowDC(hwnd);
+                    releaseDc = (hdc != nullptr);
+                }
+                if (hdc) {
+                    int w = MeasureTextWidth(hdc, hwnd, 10, false, clean.c_str()) + DpiScale(hwnd, 16);
+                    int h = DpiScale(hwnd, 24);
+                    if (static_cast<int>(pUMM->mis.itemWidth) < w) pUMM->mis.itemWidth = static_cast<UINT>(w);
+                    if (static_cast<int>(pUMM->mis.itemHeight) < h) pUMM->mis.itemHeight = static_cast<UINT>(h);
+                    if (releaseDc) ReleaseDC(hwnd, hdc);
+                }
+            }
+        }
         return true;
     }
     case WM_NCPAINT:

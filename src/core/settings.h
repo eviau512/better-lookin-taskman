@@ -1,6 +1,8 @@
 #pragma once
 #include <windows.h>
 #include <cstdint>
+#include <cwctype>
+#include <string>
 
 namespace taskman {
 
@@ -112,5 +114,33 @@ struct AppSettings {
 void LoadSettings(AppSettings& s);
 void SaveSettings(const AppSettings& s);
 DWORD GetUpdateIntervalMs(UpdateSpeed speed);
+
+inline std::wstring TrimLowerCopy(const std::wstring& s) {
+    size_t start = 0;
+    while (start < s.size() && iswspace(s[start])) ++start;
+    size_t end = s.size();
+    while (end > start && iswspace(s[end - 1])) --end;
+    std::wstring out;
+    out.reserve(end - start);
+    for (size_t i = start; i < end; ++i) {
+        out.push_back(static_cast<wchar_t>(towlower(s[i])));
+    }
+    return out;
+}
+
+inline bool ContainsNoCase(const std::wstring& haystack, const std::wstring& lowerNeedle) {
+    if (lowerNeedle.empty()) return true;
+    if (haystack.size() < lowerNeedle.size()) return false;
+    const size_t limit = haystack.size() - lowerNeedle.size();
+    for (size_t i = 0; i <= limit; ++i) {
+        size_t j = 0;
+        while (j < lowerNeedle.size() &&
+               static_cast<wchar_t>(towlower(haystack[i + j])) == lowerNeedle[j]) {
+            ++j;
+        }
+        if (j == lowerNeedle.size()) return true;
+    }
+    return false;
+}
 
 } // namespace taskman

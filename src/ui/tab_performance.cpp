@@ -364,6 +364,18 @@ int TabPerformance::GetSidebarPreferredHeight() const {
     return cardPad + count * (cardH + gap) + cardPad + DpiScale(hwnd_, 2);
 }
 
+int TabPerformance::GetMinimumRequiredWidth() const {
+    if (!hwnd_) return 840;
+    // Sidebar + splitter + right pane horizontal padding (20*2) + min usable chart & stat/kv width (550dp)
+    int sideW = GetSidebarPreferredWidth();
+    return sideW + DpiScale(hwnd_, 590);
+}
+
+int TabPerformance::GetMinimumRequiredHeight() const {
+    if (!hwnd_) return 490;
+    return DpiScale(hwnd_, 490);
+}
+
 RECT TabPerformance::GetRightGraphScreenRect() const {
     RECT out{};
     if (!hwnd_) return out;

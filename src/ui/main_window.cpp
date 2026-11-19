@@ -79,6 +79,38 @@ LRESULT CALLBACK OwnerBtnHoverProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
+LRESULT CALLBACK SearchEditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                                          UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    HWND hMain = reinterpret_cast<HWND>(dwRefData);
+    switch (msg) {
+    case WM_KEYDOWN:
+        if (wParam == 'A' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            SendMessageW(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+        if (wParam == VK_ESCAPE) {
+            if (GetWindowTextLengthW(hwnd) > 0) {
+                SetWindowTextW(hwnd, L"");
+            } else if (hMain) {
+                SetFocus(hMain);
+            }
+            return 0;
+        }
+        break;
+    case WM_CHAR:
+        if (wParam == 1 || wParam == 27) return 0; // Suppress Ctrl+A / Esc beep
+        break;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        if (hMain) InvalidateRect(hMain, nullptr, FALSE);
+        break;
+    case WM_NCDESTROY:
+        RemoveWindowSubclass(hwnd, SearchEditSubclassProc, uIdSubclass);
+        break;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
 } // namespace
 
 bool MainWindow::Create(int nCmdShow, int initialTab) {
@@ -127,8 +159,8 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         if (GetMonitorInfoW(hMon, &mi)) {
             int workW = mi.rcWork.right - mi.rcWork.left;
             int workH = mi.rcWork.bottom - mi.rcWork.top;
-            w = std::clamp<int>(r.right - r.left, MulDiv(480, static_cast<int>(sysDpi), 96), workW);
-            h = std::clamp<int>(r.bottom - r.top, MulDiv(340, static_cast<int>(sysDpi), 96), workH);
+            w = std::clamp<int>(r.right - r.left, MulDiv(860, static_cast<int>(sysDpi), 96), workW);
+            h = std::clamp<int>(r.bottom - r.top, MulDiv(600, static_cast<int>(sysDpi), 96), workH);
             x = std::clamp<int>(r.left, mi.rcWork.left, mi.rcWork.right - 250);
             y = std::clamp<int>(r.top, mi.rcWork.top, mi.rcWork.bottom - 200);
         }
@@ -185,6 +217,18 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
 
     SwitchTab(settings_.activeTab);
     LayoutChildren();
+    if (settings_.moreDetails && !settings_.maximized) {
+        RECT curWrc{};
+        GetWindowRect(hwnd_, &curWrc);
+        int minW = GetMinimumDetailedWidth();
+        int minH = DpiScale(hwnd_, 600);
+        if ((curWrc.right - curWrc.left) < minW || (curWrc.bottom - curWrc.top) < minH) {
+            SetWindowPos(hwnd_, nullptr, 0, 0,
+                         std::max<int>(curWrc.right - curWrc.left, minW),
+                         std::max<int>(curWrc.bottom - curWrc.top, minH),
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
     SetUpdateSpeed(settings_.updateSpeed);
 
     int showCmd = (settings_.moreDetails && settings_.maximized) ? SW_SHOWMAXIMIZED : nCmdShow;
@@ -225,6 +269,15 @@ void MainWindow::InitMonitorsAndTabs() {
         0, 0, 100, 26,
         hwnd_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(IDC_BTN_PRIMARY_ACTION)), hInst, nullptr);
     SetWindowSubclass(hBtnAction_, OwnerBtnHoverProc, 1, reinterpret_cast<DWORD_PTR>(&hoverBtnAction_));
+
+    hSearchEdit_ = CreateWindowExW(
+        0, L"EDIT", L"",
+        WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL,
+        0, 0, 200, 22,
+        hwnd_, reinterpret_cast<HMENU>(static_cast<UINT_PTR>(IDC_EDIT_FOOTER_SEARCH)), hInst, nullptr);
+    if (hSearchEdit_) {
+        SetWindowSubclass(hSearchEdit_, SearchEditSubclassProc, 1, reinterpret_cast<DWORD_PTR>(hwnd_));
+    }
 
     // Simple mode running apps list
     hListSimple_ = CreateWindowExW(
@@ -302,6 +355,7 @@ void MainWindow::InitMonitorsAndTabs() {
     tabDetails_.onGoToService = [this](DWORD pid) {
         SwitchTab(6);
         tabServices_.SelectServiceByPid(pid);
+        SyncSearchBoxState();
     };
     tabDetails_.onSelectionChanged = [this]() { UpdatePrimaryActionButton(); };
     tabDetails_.onRefreshNeeded = [this]() { RefreshAll(true); };
@@ -474,6 +528,7 @@ void MainWindow::LayoutChildren() {
         footerRect_ = { 0, contentRect_.bottom, contentRect_.right, contentRect_.bottom };
         if (hBtnMore_ && IsWindowVisible(hBtnMore_)) ShowWindow(hBtnMore_, SW_HIDE);
         if (hBtnAction_ && IsWindowVisible(hBtnAction_)) ShowWindow(hBtnAction_, SW_HIDE);
+        if (hSearchEdit_ && IsWindowVisible(hSearchEdit_)) ShowWindow(hSearchEdit_, SW_HIDE);
         tabPerf_.Resize(contentRect_);
         return;
     }
@@ -539,6 +594,108 @@ void MainWindow::LayoutChildren() {
     LayoutFooterButtons();
 }
 
+bool MainWindow::IsSearchTabActive() const {
+    return settings_.moreDetails && !IsInPerfSummary() &&
+           (settings_.activeTab == 0 || settings_.activeTab == 5 || settings_.activeTab == 6);
+}
+
+void MainWindow::SyncSearchBoxState() {
+    if (!hSearchEdit_) return;
+    if (!IsSearchTabActive()) {
+        searchFrameRect_ = {};
+        searchClearRect_ = {};
+        hoverSearchClear_ = false;
+        if (IsWindowVisible(hSearchEdit_)) ShowWindow(hSearchEdit_, SW_HIDE);
+        return;
+    }
+
+    const Strings& s = GetStrings(settings_.langMode);
+    const wchar_t* cue = s.searchCueProcesses;
+    const std::wstring* activeFilter = nullptr;
+    if (settings_.activeTab == 0) {
+        cue = s.searchCueProcesses;
+        activeFilter = &tabProcesses_.Filter();
+    } else if (settings_.activeTab == 5) {
+        cue = s.searchCueDetails;
+        activeFilter = &tabDetails_.Filter();
+    } else if (settings_.activeTab == 6) {
+        cue = s.searchCueServices;
+        activeFilter = &tabServices_.Filter();
+    }
+    SendMessageW(hSearchEdit_, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(cue));
+
+    if (activeFilter) {
+        wchar_t curBuf[256] = {};
+        GetWindowTextW(hSearchEdit_, curBuf, ARRAYSIZE(curBuf));
+        if (*activeFilter != curBuf) {
+            suppressSearchSync_ = true;
+            SetWindowTextW(hSearchEdit_, activeFilter->c_str());
+            suppressSearchSync_ = false;
+        }
+    }
+    LayoutFooterButtons();
+    InvalidateRect(hwnd_, &footerRect_, FALSE);
+}
+
+void MainWindow::OnSearchTextChanged() {
+    if (suppressSearchSync_ || !hSearchEdit_) return;
+    int len = GetWindowTextLengthW(hSearchEdit_);
+    std::wstring query(static_cast<size_t>(std::max(0, len)) + 1, L'\0');
+    if (len > 0) {
+        GetWindowTextW(hSearchEdit_, &query[0], len + 1);
+        query.resize(static_cast<size_t>(len));
+    } else {
+        query.clear();
+    }
+
+    if (settings_.activeTab == 0) {
+        tabProcesses_.SetFilter(query);
+    } else if (settings_.activeTab == 5) {
+        tabDetails_.SetFilter(query);
+    } else if (settings_.activeTab == 6) {
+        tabServices_.SetFilter(query);
+    }
+    UpdatePrimaryActionButton();
+    if (searchFrameRect_.right > searchFrameRect_.left) {
+        InvalidateRect(hwnd_, &searchFrameRect_, FALSE);
+    }
+}
+
+int MainWindow::GetMinimumDetailedWidth() const {
+    if (!hwnd_) return 860;
+    int baseMin = DpiScale(hwnd_, 860);
+
+    // Ensure 8 tabs + theme pill always fit comfortably without crowding
+    const Strings& s = GetStrings(settings_.langMode);
+    auto& tm = ThemeManager::Instance();
+    int tabsMinClient = 0;
+    if (HDC hdc = GetDC(hwnd_)) {
+        const wchar_t* themeTxt = tm.IsDark() ? s.themeDarkLabel : s.themeLightLabel;
+        int pillW = tm.MeasureTextWidth(hdc, hwnd_, 10, false, themeTxt) + DpiScale(hwnd_, 32);
+        const wchar_t* tabLabels[kTabCount] = {
+            s.tabProcesses, s.tabPerformance, s.tabAppHistory,
+            s.tabStartup, s.tabUsers, s.tabDetails, s.tabServices, s.tabLocks
+        };
+        int padH = DpiScale(hwnd_, 13);
+        int curX = DpiScale(hwnd_, 4);
+        for (int i = 0; i < kTabCount; ++i) {
+            curX += tm.MeasureTextWidth(hdc, hwnd_, 10, false, tabLabels[i]) + padH * 2 + DpiScale(hwnd_, 2);
+        }
+        tabsMinClient = curX + DpiScale(hwnd_, 16) + pillW + DpiScale(hwnd_, 8);
+        ReleaseDC(hwnd_, hdc);
+    }
+
+    // Account for window non-client border delta
+    RECT wrc{}, crc{};
+    GetWindowRect(hwnd_, &wrc);
+    GetClientRect(hwnd_, &crc);
+    int frameW = std::max<int>(DpiScale(hwnd_, 16), (wrc.right - wrc.left) - (crc.right - crc.left));
+
+    int perfMinClient = tabPerf_.GetMinimumRequiredWidth();
+    int neededClient = std::max(perfMinClient, tabsMinClient);
+    return std::max(baseMin, neededClient + frameW);
+}
+
 void MainWindow::LayoutFooterButtons() {
     if (!hwnd_) return;
     int w = std::max(0, static_cast<int>(footerRect_.right - footerRect_.left));
@@ -555,9 +712,41 @@ void MainWindow::LayoutFooterButtons() {
     int moreW = std::max(DpiScale(hwnd_, 84), DpiScale(hwnd_, 20) + moreTextW + DpiScale(hwnd_, 10));
     int actW = std::max(DpiScale(hwnd_, 74), actTextW + DpiScale(hwnd_, 22));
     int gap = DpiScale(hwnd_, 8);
+    int actX = std::max(padX + moreW + gap, w - padX - actW);
 
     MoveButtonIfChanged(hwnd_, hBtnMore_, padX, btnY, moreW, btnH);
-    MoveButtonIfChanged(hwnd_, hBtnAction_, std::max(padX + moreW + gap, w - padX - actW), btnY, actW, btnH);
+    MoveButtonIfChanged(hwnd_, hBtnAction_, actX, btnY, actW, btnH);
+
+    if (IsSearchTabActive()) {
+        int leftBound = padX + moreW + gap * 2;
+        int rightBound = actX - gap * 2;
+        int avail = rightBound - leftBound;
+        if (avail >= DpiScale(hwnd_, 110)) {
+            int boxW = std::clamp(avail, DpiScale(hwnd_, 140), DpiScale(hwnd_, 320));
+            int boxX = leftBound + (avail - boxW) / 2;
+            searchFrameRect_ = { boxX, btnY, boxX + boxW, btnY + btnH };
+            int iconPadL = DpiScale(hwnd_, 24);
+            int clearW = DpiScale(hwnd_, 22);
+            searchClearRect_ = { searchFrameRect_.right - clearW, searchFrameRect_.top + 1,
+                                 searchFrameRect_.right - 1, searchFrameRect_.bottom - 1 };
+            if (hSearchEdit_) {
+                int editH = std::max(DpiScale(hwnd_, 16), btnH - DpiScale(hwnd_, 8));
+                int editY = btnY + (btnH - editH) / 2 + DpiScale(hwnd_, 1);
+                MoveButtonIfChanged(hwnd_, hSearchEdit_,
+                                    searchFrameRect_.left + iconPadL, editY,
+                                    std::max(30, boxW - iconPadL - clearW), editH);
+                if (!IsWindowVisible(hSearchEdit_)) ShowWindow(hSearchEdit_, SW_SHOW);
+            }
+        } else {
+            searchFrameRect_ = {};
+            searchClearRect_ = {};
+            if (hSearchEdit_ && IsWindowVisible(hSearchEdit_)) ShowWindow(hSearchEdit_, SW_HIDE);
+        }
+    } else {
+        searchFrameRect_ = {};
+        searchClearRect_ = {};
+        if (hSearchEdit_ && IsWindowVisible(hSearchEdit_)) ShowWindow(hSearchEdit_, SW_HIDE);
+    }
 }
 
 void MainWindow::SwitchTab(int tabIdx) {
@@ -598,6 +787,7 @@ void MainWindow::SwitchTab(int tabIdx) {
 
     UpdateMenuChecks();
     LayoutChildren();
+    SyncSearchBoxState();
     UpdatePrimaryActionButton();
     InvalidateRect(hwnd_, &tabStripRect_, FALSE);
     InvalidateRect(hwnd_, &footerRect_, FALSE);
@@ -628,12 +818,14 @@ void MainWindow::ToggleMoreDetails() {
     } else {
         settings_.moreDetails = true;
         RebuildMenu();
+        int minW = GetMinimumDetailedWidth();
+        int minH = DpiScale(hwnd_, 600);
         bool validSaved = (settings_.windowRect.left > -32000 && settings_.windowRect.top > -32000 &&
                            (settings_.windowRect.right - settings_.windowRect.left) >= DpiScale(hwnd_, 480) &&
                            (settings_.windowRect.bottom - settings_.windowRect.top) >= DpiScale(hwnd_, 340));
         int w = validSaved ? (settings_.windowRect.right - settings_.windowRect.left) : DpiScale(hwnd_, 1020);
         int h = validSaved ? (settings_.windowRect.bottom - settings_.windowRect.top) : DpiScale(hwnd_, 700);
-        SetWindowPos(hwnd_, nullptr, 0, 0, std::max<int>(w, DpiScale(hwnd_, 480)), std::max<int>(h, DpiScale(hwnd_, 340)),
+        SetWindowPos(hwnd_, nullptr, 0, 0, std::max<int>(w, minW), std::max<int>(h, minH),
                      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
     SwitchTab(settings_.activeTab);
@@ -755,6 +947,11 @@ void MainWindow::ApplyCurrentTheme(bool redrawTabs) {
 
     if (hBtnMore_) InvalidateRect(hBtnMore_, nullptr, FALSE);
     if (hBtnAction_) InvalidateRect(hBtnAction_, nullptr, FALSE);
+    if (hSearchEdit_) {
+        SendMessageW(hSearchEdit_, WM_SETFONT, reinterpret_cast<WPARAM>(tm.GetFont(hwnd_, 10, false)), TRUE);
+        tm.ApplyToControl(hSearchEdit_);
+        InvalidateRect(hSearchEdit_, nullptr, TRUE);
+    }
     if (redrawTabs) {
         LayoutChildren();
         InvalidateRect(hwnd_, nullptr, FALSE);
@@ -796,6 +993,26 @@ void MainWindow::SetLanguageMode(LangMode mode) {
     tabDetails_.RebuildColumns();
     tabServices_.RebuildColumns();
     tabLocks_.RebuildColumns();
+    SyncSearchBoxState();
+    if (settings_.moreDetails && !IsZoomed(hwnd_) && !IsInPerfSummary()) {
+        RECT curWrc{};
+        GetWindowRect(hwnd_, &curWrc);
+        int minW = GetMinimumDetailedWidth();
+        if ((curWrc.right - curWrc.left) < minW) {
+            int nx = curWrc.left;
+            int ny = curWrc.top;
+            HMONITOR hMon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO mi{ sizeof(mi) };
+            if (GetMonitorInfoW(hMon, &mi)) {
+                minW = std::min<int>(minW, mi.rcWork.right - mi.rcWork.left);
+                if (nx + minW > mi.rcWork.right) {
+                    nx = std::max<int>(mi.rcWork.left, mi.rcWork.right - minW);
+                }
+            }
+            SetWindowPos(hwnd_, nullptr, nx, ny, minW, curWrc.bottom - curWrc.top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
     LayoutChildren();
     RefreshAll(true);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -1304,6 +1521,50 @@ void MainWindow::PaintClient(HDC hdc, const RECT& rc) {
     LineTo(hdc, rc.right, footerRect_.top);
     SelectObject(hdc, oldPen);
     DeleteObject(pen);
+
+    // Search box chrome inside footer (Processes / Details / Services)
+    if (IsSearchTabActive() && searchFrameRect_.right > searchFrameRect_.left) {
+        HBRUSH eb = CreateSolidBrush(pal.editBg);
+        FillRect(hdc, &searchFrameRect_, eb);
+        DeleteObject(eb);
+
+        COLORREF bdClr = (GetFocus() == hSearchEdit_) ? pal.accentColor : pal.editBorder;
+        HPEN ep = CreatePen(PS_SOLID, 1, bdClr);
+        HGDIOBJ op = SelectObject(hdc, ep);
+        HGDIOBJ ob = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, searchFrameRect_.left, searchFrameRect_.top,
+                  searchFrameRect_.right, searchFrameRect_.bottom);
+        SelectObject(hdc, ob);
+        SelectObject(hdc, op);
+        DeleteObject(ep);
+
+        Gdiplus::Graphics gp(hdc);
+        gp.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+        Gdiplus::Color crIcon(255, GetRValue(pal.textSecondary), GetGValue(pal.textSecondary), GetBValue(pal.textSecondary));
+        Gdiplus::Pen iconPen(crIcon, 1.3f);
+        int cy = (searchFrameRect_.top + searchFrameRect_.bottom) / 2;
+        int ix = searchFrameRect_.left + DpiScale(hwnd_, 8);
+        int d = DpiScale(hwnd_, 8);
+        gp.DrawEllipse(&iconPen, static_cast<float>(ix), static_cast<float>(cy - d / 2 - 1),
+                       static_cast<float>(d), static_cast<float>(d));
+        gp.DrawLine(&iconPen,
+                    static_cast<float>(ix + d * 0.78), static_cast<float>(cy - d / 2 - 1 + d * 0.78),
+                    static_cast<float>(ix + d + DpiScale(hwnd_, 3)), static_cast<float>(cy + d / 2 + DpiScale(hwnd_, 2)));
+
+        if (hSearchEdit_ && GetWindowTextLengthW(hSearchEdit_) > 0 && searchClearRect_.right > searchClearRect_.left) {
+            if (hoverSearchClear_) {
+                HBRUSH hb = CreateSolidBrush(pal.btnHoverBg);
+                FillRect(hdc, &searchClearRect_, hb);
+                DeleteObject(hb);
+            }
+            COLORREF xClr = hoverSearchClear_ ? pal.textPrimary : pal.textSecondary;
+            Gdiplus::Pen xPen(Gdiplus::Color(255, GetRValue(xClr), GetGValue(xClr), GetBValue(xClr)), 1.4f);
+            int cx = (searchClearRect_.left + searchClearRect_.right) / 2;
+            int r = DpiScale(hwnd_, 4);
+            gp.DrawLine(&xPen, cx - r, cy - r, cx + r, cy + r);
+            gp.DrawLine(&xPen, cx + r, cy - r, cx - r, cy + r);
+        }
+    }
 }
 
 void MainWindow::DrawTabStrip(HDC hdc, const ThemePalette& pal, const Strings& s) {
@@ -1573,6 +1834,7 @@ void MainWindow::NavigateToDetails(DWORD pid) {
     SwitchTab(5);
     RefreshAll(true);
     tabDetails_.SelectProcessByPid(pid);
+    SyncSearchBoxState();
 }
 
 void MainWindow::HandleCommand(UINT id) {
@@ -1784,6 +2046,12 @@ void MainWindow::HandleCommand(UINT id) {
             SetPerfSummaryMode(PerfSummaryMode::Normal);
         }
         break;
+    case IDA_FIND:
+        if (IsSearchTabActive() && hSearchEdit_) {
+            SetFocus(hSearchEdit_);
+            SendMessageW(hSearchEdit_, EM_SETSEL, 0, -1);
+        }
+        break;
     }
 }
 
@@ -1882,9 +2150,48 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_GETMINMAXINFO: {
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
-        mmi->ptMinTrackSize.x = DpiScale(hwnd_, settings_.moreDetails ? 480 : 340);
-        mmi->ptMinTrackSize.y = DpiScale(hwnd_, settings_.moreDetails ? 340 : 260);
+        if (settings_.moreDetails) {
+            mmi->ptMinTrackSize.x = GetMinimumDetailedWidth();
+            mmi->ptMinTrackSize.y = DpiScale(hwnd_, 600);
+        } else {
+            mmi->ptMinTrackSize.x = DpiScale(hwnd_, 340);
+            mmi->ptMinTrackSize.y = DpiScale(hwnd_, 260);
+        }
         return 0;
+    }
+
+    case WM_NCHITTEST: {
+        LRESULT ht = DefWindowProcW(hwnd_, msg, wParam, lParam);
+        if (!settings_.moreDetails || IsInPerfSummary()) return ht;
+        POINT screenPt{ static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)) };
+        if (ht == HTMENU && hMainMenu_) {
+            int cnt = GetMenuItemCount(hMainMenu_);
+            if (cnt > 0 && MenuItemFromPoint(hwnd_, hMainMenu_, screenPt) == -1) {
+                RECT rcLast{};
+                if (GetMenuItemRect(hwnd_, hMainMenu_, static_cast<UINT>(cnt - 1), &rcLast) &&
+                    screenPt.x >= rcLast.right) {
+                    return HTCAPTION;
+                }
+            }
+        } else if (ht == HTCLIENT) {
+            POINT cliPt = screenPt;
+            ScreenToClient(hwnd_, &cliPt);
+            if (PtInRect(&tabStripRect_, cliPt)) {
+                bool onInteractive = (PtInRect(&themeBtnRect_, cliPt) != FALSE);
+                if (!onInteractive) {
+                    for (int i = 0; i < kTabCount; ++i) {
+                        if (PtInRect(&tabRects_[i], cliPt)) {
+                            onInteractive = true;
+                            break;
+                        }
+                    }
+                }
+                if (!onInteractive) {
+                    return HTCAPTION;
+                }
+            }
+        }
+        return ht;
     }
 
     case WM_ERASEBKGND:
@@ -1911,6 +2218,14 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_CTLCOLOREDIT: {
+        HDC hdcEdit = reinterpret_cast<HDC>(wParam);
+        const auto& pal = ThemeManager::Instance().Palette();
+        SetTextColor(hdcEdit, pal.textPrimary);
+        SetBkColor(hdcEdit, pal.editBg);
+        return reinterpret_cast<LRESULT>(ThemeManager::Instance().EditBrush());
+    }
+
     case WM_DRAWITEM: {
         auto* dis = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
         if (dis && dis->CtlType == ODT_BUTTON) {
@@ -1923,19 +2238,35 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_MOUSEMOVE: {
         POINT pt{ static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)) };
         HandleTabStripMove(pt);
+        bool newHoverClear = (IsSearchTabActive() && hSearchEdit_ && GetWindowTextLengthW(hSearchEdit_) > 0 &&
+                              PtInRect(&searchClearRect_, pt) != FALSE);
+        if (newHoverClear != hoverSearchClear_) {
+            hoverSearchClear_ = newHoverClear;
+            TRACKMOUSEEVENT tme{ sizeof(tme), TME_LEAVE, hwnd_, 0 };
+            TrackMouseEvent(&tme);
+            InvalidateRect(hwnd_, &searchClearRect_, FALSE);
+        }
         return 0;
     }
 
     case WM_MOUSELEAVE:
-        if (hoveredTab_ != -1 || hoverThemeBtn_) {
+        if (hoveredTab_ != -1 || hoverThemeBtn_ || hoverSearchClear_) {
             hoveredTab_ = -1;
             hoverThemeBtn_ = false;
+            hoverSearchClear_ = false;
             InvalidateRect(hwnd_, &tabStripRect_, FALSE);
+            if (searchClearRect_.right > searchClearRect_.left) InvalidateRect(hwnd_, &searchClearRect_, FALSE);
         }
         return 0;
 
     case WM_LBUTTONDOWN: {
         POINT pt{ static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)) };
+        if (IsSearchTabActive() && hSearchEdit_ && GetWindowTextLengthW(hSearchEdit_) > 0 &&
+            PtInRect(&searchClearRect_, pt)) {
+            SetWindowTextW(hSearchEdit_, L"");
+            SetFocus(hSearchEdit_);
+            return 0;
+        }
         HandleTabStripClick(pt);
         return 0;
     }
@@ -1971,6 +2302,10 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
 
     case WM_COMMAND:
+        if (HIWORD(wParam) == EN_CHANGE && LOWORD(wParam) == IDC_EDIT_FOOTER_SEARCH) {
+            OnSearchTextChanged();
+            return 0;
+        }
         HandleCommand(LOWORD(wParam));
         return 0;
 

@@ -245,7 +245,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
             MSG msg{};
             while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
                 bool skipAccel = false;
-                if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN) && msg.wParam == VK_DELETE) {
+                if ((msg.message == WM_KEYDOWN || msg.message == WM_SYSKEYDOWN) &&
+                    (msg.wParam == VK_DELETE || msg.wParam == VK_ESCAPE)) {
                     wchar_t cls[32] = {};
                     if (msg.hwnd && GetClassNameW(msg.hwnd, cls, ARRAYSIZE(cls)) > 0 && _wcsicmp(cls, L"Edit") == 0) {
                         skipAccel = true;

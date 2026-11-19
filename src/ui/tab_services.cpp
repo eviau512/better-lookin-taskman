@@ -159,7 +159,20 @@ void TabServices::SortRows() {
     });
 }
 
+void TabServices::SetFilter(const std::wstring& query) {
+    filterText_ = query;
+    std::wstring nextLower = TrimLowerCopy(query);
+    if (nextLower == filterLower_) return;
+    filterLower_ = std::move(nextLower);
+    ApplyFilterAndSort();
+}
+
 void TabServices::RefreshData(const ServiceManager& mgr) {
+    allItems_ = mgr.Items();
+    ApplyFilterAndSort();
+}
+
+void TabServices::ApplyFilterAndSort() {
     if (!hList_) return;
 
     std::wstring selName;
@@ -168,19 +181,41 @@ void TabServices::RefreshData(const ServiceManager& mgr) {
         selName = items_[static_cast<size_t>(selRow)].name;
     }
 
-    items_ = mgr.Items();
+    if (filterLower_.empty()) {
+        items_ = allItems_;
+    } else {
+        const auto& s = GetStrings(settings_->langMode);
+        items_.clear();
+        items_.reserve(allItems_.size());
+        for (const auto& it : allItems_) {
+            if (ContainsNoCase(it.name, filterLower_) ||
+                ContainsNoCase(it.displayName, filterLower_) ||
+                ContainsNoCase(it.description, filterLower_) ||
+                ContainsNoCase(it.group, filterLower_) ||
+                (it.pid != 0 && ContainsNoCase(std::to_wstring(it.pid), filterLower_)) ||
+                ContainsNoCase(ServiceStateText(it.currentState, s), filterLower_)) {
+                items_.push_back(it);
+            }
+        }
+    }
     SortRows();
     ListView_SetItemCountEx(hList_, static_cast<int>(items_.size()), LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
 
     if (!selName.empty()) {
+        int matched = -1;
         for (int i = 0; i < static_cast<int>(items_.size()); ++i) {
             if (items_[static_cast<size_t>(i)].name == selName) {
-                if (i != selRow) {
-                    ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
-                    ListView_SetItemState(hList_, i, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
-                }
+                matched = i;
                 break;
             }
+        }
+        if (matched >= 0) {
+            if (matched != selRow) {
+                ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+                ListView_SetItemState(hList_, matched, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+            }
+        } else {
+            ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
         }
     }
     InvalidateRect(hList_, nullptr, FALSE);
@@ -231,6 +266,9 @@ void TabServices::OpenServicesMsc() {
 
 void TabServices::SelectServiceByPid(DWORD pid) {
     if (!hList_ || pid == 0) return;
+    if (!filterLower_.empty()) {
+        SetFilter(L"");
+    }
     ListView_SetItemState(hList_, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
     for (int i = 0; i < static_cast<int>(items_.size()); ++i) {
         if (items_[static_cast<size_t>(i)].pid == pid) {

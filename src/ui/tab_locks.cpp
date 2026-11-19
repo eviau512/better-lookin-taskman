@@ -459,6 +459,11 @@ void TabLocks::StartScan(const std::wstring& targetPath) {
     if (scanThread_.joinable()) {
         scanThread_.join();
     }
+    result_ = LockCheckResult{};
+    if (hList_) {
+        ListView_SetItemCountEx(hList_, 0, LVSICF_NOINVALIDATEALL);
+    }
+    if (onSelectionChanged) onSelectionChanged();
     scanning_.store(true, std::memory_order_release);
     LayoutControls();
     InvalidateRect(hwnd_, nullptr, FALSE);
