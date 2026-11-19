@@ -527,7 +527,7 @@ int TabPerformance::GetMinimumRequiredWidth() const {
 
 int TabPerformance::GetMinimumRequiredHeight() const {
     if (!hwnd_) return 490;
-    return DpiScale(hwnd_, 490);
+    return (std::max)(DpiScale(hwnd_, 490), GetSidebarPreferredHeight());
 }
 
 RECT TabPerformance::GetRightGraphScreenRect() const {

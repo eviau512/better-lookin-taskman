@@ -224,9 +224,9 @@ bool MainWindow::Create(int nCmdShow, int initialTab) {
         RECT curWrc{};
         GetWindowRect(hwnd_, &curWrc);
         int minW = GetMinimumDetailedWidth();
-        int minH = DpiScale(hwnd_, 600);
+        int minH = GetMinimumDetailedHeight();
         int targetW = hasSavedRect ? std::max<int>(curWrc.right - curWrc.left, minW) : minW;
-        int targetH = std::max<int>(curWrc.bottom - curWrc.top, minH);
+        int targetH = hasSavedRect ? std::max<int>(curWrc.bottom - curWrc.top, minH) : minH;
         int targetX = curWrc.left;
         int targetY = curWrc.top;
         HMONITOR hMon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
@@ -723,6 +723,27 @@ int MainWindow::GetMinimumDetailedWidth() const {
     return result;
 }
 
+int MainWindow::GetMinimumDetailedHeight() const {
+    if (!hwnd_) return 600;
+    int baseMin = DpiScale(hwnd_, 600);
+    int chromeH = DpiScale(hwnd_, 32) + DpiScale(hwnd_, 46); // tab strip + footer
+    RECT wrc{}, crc{};
+    GetWindowRect(hwnd_, &wrc);
+    GetClientRect(hwnd_, &crc);
+    int frameH = std::max<int>(DpiScale(hwnd_, 60), (wrc.bottom - wrc.top) - (crc.bottom - crc.top));
+    int perfMinH = tabPerf_.GetMinimumRequiredHeight() + chromeH + frameH;
+    int result = std::max(baseMin, perfMinH);
+    HMONITOR hMon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi{ sizeof(mi) };
+    if (GetMonitorInfoW(hMon, &mi)) {
+        int workCap = (mi.rcWork.bottom - mi.rcWork.top) - DpiScale(hwnd_, 24);
+        if (workCap > DpiScale(hwnd_, 480)) {
+            result = std::min(result, workCap);
+        }
+    }
+    return result;
+}
+
 void MainWindow::LayoutFooterButtons() {
     if (!hwnd_) return;
     int w = std::max(0, static_cast<int>(footerRect_.right - footerRect_.left));
@@ -846,12 +867,12 @@ void MainWindow::ToggleMoreDetails() {
         settings_.moreDetails = true;
         RebuildMenu();
         int minW = GetMinimumDetailedWidth();
-        int minH = DpiScale(hwnd_, 600);
+        int minH = GetMinimumDetailedHeight();
         bool validSaved = (settings_.windowRect.left > -32000 && settings_.windowRect.top > -32000 &&
                            (settings_.windowRect.right - settings_.windowRect.left) >= DpiScale(hwnd_, 480) &&
                            (settings_.windowRect.bottom - settings_.windowRect.top) >= DpiScale(hwnd_, 340));
         int w = validSaved ? (settings_.windowRect.right - settings_.windowRect.left) : minW;
-        int h = validSaved ? (settings_.windowRect.bottom - settings_.windowRect.top) : DpiScale(hwnd_, 700);
+        int h = validSaved ? (settings_.windowRect.bottom - settings_.windowRect.top) : minH;
         SetWindowPos(hwnd_, nullptr, 0, 0, std::max<int>(w, minW), std::max<int>(h, minH),
                      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
@@ -2179,7 +2200,7 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
         if (settings_.moreDetails) {
             mmi->ptMinTrackSize.x = GetMinimumDetailedWidth();
-            mmi->ptMinTrackSize.y = DpiScale(hwnd_, 600);
+            mmi->ptMinTrackSize.y = GetMinimumDetailedHeight();
         } else {
             mmi->ptMinTrackSize.x = DpiScale(hwnd_, 340);
             mmi->ptMinTrackSize.y = DpiScale(hwnd_, 260);

@@ -62,6 +62,7 @@ private:
     void SyncSearchBoxState();
     void OnSearchTextChanged();
     int GetMinimumDetailedWidth() const;
+    int GetMinimumDetailedHeight() const;
 
     void RefreshAll(bool force);
     void RefreshActiveView(bool allowManagerRefresh, ULONGLONG minStaleMs = 4000);
