@@ -69,6 +69,8 @@ void LoadSettings(AppSettings& s) {
     ReadBool(hKey, L"ShowFullAccountName", s.showFullAccountName);
     ReadBool(hKey, L"ShowAllHistory", s.showAllHistory);
     ReadBool(hKey, L"PreLaunchSampling", s.preLaunchSampling);
+    ReadBool(hKey, L"PreLaunchSamplingUserSet", s.preLaunchSamplingUserSet);
+    ReadBool(hKey, L"KeepExplorerAlive", s.keepExplorerAlive);
     ReadBool(hKey, L"GroupByType", s.groupByType);
     ReadBool(hKey, L"ShowKernelTimes", s.showKernelTimes);
     ReadBool(hKey, L"CpuLogicalView", s.cpuLogicalView);
@@ -135,6 +137,8 @@ void SaveSettings(const AppSettings& s) {
     WriteDword(hKey, L"ShowFullAccountName", s.showFullAccountName ? 1 : 0);
     WriteDword(hKey, L"ShowAllHistory", s.showAllHistory ? 1 : 0);
     WriteDword(hKey, L"PreLaunchSampling", s.preLaunchSampling ? 1 : 0);
+    WriteDword(hKey, L"PreLaunchSamplingUserSet", s.preLaunchSamplingUserSet ? 1 : 0);
+    WriteDword(hKey, L"KeepExplorerAlive", s.keepExplorerAlive ? 1 : 0);
     WriteDword(hKey, L"GroupByType", s.groupByType ? 1 : 0);
     WriteDword(hKey, L"ShowKernelTimes", s.showKernelTimes ? 1 : 0);
     WriteDword(hKey, L"CpuLogicalView", s.cpuLogicalView ? 1 : 0);

@@ -20,7 +20,8 @@ This is very much a work-in-progress hobby/learning project and makes **no claim
 - **8 Tabs + Fewer Details Mode**: Processes, Performance (CPU, Memory, Disk, Network with public Global IPv6 preference, GPU), App history (SRUM-backed where available), Startup (including UWP tasks), Users, Details, Services, and **Lock Check** (drag-and-drop/drive locking process detection, protected OS core process guard, and NTFS owner/delete permission diagnosis).
 - **Small Experimental Additions**:
   - **Display Time Span Resampling (`30s` / `60s` / `4m`)**: Maintains a `500ms` 4-minute ring buffer so switching speed/span immediately redraws past utilization curves.
-  - **Optional Pre-launch Background Sampling (default OFF)**: When enabled via **Options → Record pre-launch performance in background**, a lightweight `/daemon` collector shares a memory-only named ring buffer (`Local\BetterWin10TaskmanPerfRing`, zero disk writes) so charts can show recent activity prior to opening the UI.
+  - **Optional Pre-launch Background Sampling (default OFF, auto-enabled with IFEO)**: When enabled via **Enhance → Record pre-launch performance in background**, a lightweight `/daemon` collector shares a memory-only named ring buffer (`Local\BetterWin10TaskmanPerfRing`, zero disk writes) so charts can show recent activity prior to opening the UI.
+  - **Explorer Keep-Alive & Reversible IFEO Replacement**: Under the **Enhance** menu, automatically revives `explorer.exe` if it exited unexpectedly, and provides a one-click reversible IFEO replacement (`Replace Task Manager (Reversible)`) with NTFS delete protection and a top-bar **Restore Original Task Manager** shortcut when active.
   - **Double-Click Compact Floating Views**: Double-clicking the Performance sidebar or right chart pane shrinks the window into a frameless floating card/graph view (`Esc` or double-click again to restore).
   - **Sky-Blue Mini CPU Graph Tray Icon**: Renders a compact CPU history waveform in the notification area.
 
@@ -56,7 +57,8 @@ build.bat
 - **8 个选项卡与简略模式**：进程、性能（CPU / 内存 / 磁盘 / 网络 / GPU）、应用历史记录（读取本地 SRUM 记录）、启动（含 UWP 应用与启用/禁用）、用户、详细信息、服务，以及 **占用检查**（支持文件/文件夹/盘符拖入与句柄/模块/服务映射扫描、核心受保护进程防误杀判定及 NTFS 所有者与删除权限诊断）。
 - **几个微小的附加尝试**：
   - **显示时间段重采样**：将性能视图时间窗细分为 `30 秒（高）` / `60 秒（正常）` / `4 分钟（低）`，后台维持 `500ms` 环形缓冲采样，切换时间跨度时可立即重绘过去对应时段的曲线。
-  - **启动前历史采集（默认关闭，可在选项中开启）**：勾选“**选项 → 后台预采样打开前性能**”后，通过轻量无窗口守护采样与纯内存命名共享环缓冲（`Local\BetterWin10TaskmanPerfRing`，零磁盘文件写入），可在本次登录会话内保留打开界面前最近一段时间的系统占用波形（若仅带 `/multi` 测试则不启用）。
+  - **启动前历史采集（默认关闭，开启 IFEO 后自动打开）**：勾选“**增强 → 后台预采样打开前性能**”后，通过轻量无窗口守护采样与纯内存命名共享环缓冲（`Local\BetterWin10TaskmanPerfRing`，零磁盘文件写入），可在本次登录会话内保留打开界面前最近一段时间的系统占用波形（若仅带 `/multi` 测试则不启用）。
+  - **资源管理器保活与可恢复 IFEO 替换**：在“**增强**”菜单下，启动时可自动唤醒意外退出的 `explorer.exe`；并支持一键可恢复 IFEO 替换（`替代任务管理器 (可恢复)`）、NTFS 防误删权限保护，以及激活后的顶部“**恢复原版任务管理器**”快捷按钮。
   - **性能页双击缩小浮窗**：双击性能选项卡左侧导航栏或右侧主图表区域，可临时收起边框与多余控件为迷你浮窗（支持拖拽、卡片切换与双击 / `Esc` 还原）。
   - **天蓝色 CPU 微缩曲线托盘图标**：托盘图标尝试采用接近原版的天蓝色调并绘制迷你 CPU 历史波形（支持“最小化时隐藏”）。
 
@@ -64,7 +66,7 @@ build.bat
 - 代码与功能仍在持续修补中，部分细节和极端多屏 / 多硬件环境下可能与原版行为存在差异。
 - 本地直接编译出的二进制**默认没有微软受信任的数字签名**，首次运行可能触发 SmartScreen 提示；后续若通过社区开源签名服务接入签名再另行说明。
 - 某些磁盘、温度或跨会话信息在非管理员权限下会受系统 API 限制（已尽量做了温和兜底）。
-- 如果使用 **IFEO (`Image File Execution Options`)** 替换系统默认任务管理器，请务必确认可随时恢复原版，不建议直接强行覆盖 `C:\Windows\System32\Taskmgr.exe`。
+- 建议通过软件内置的 **增强 → 替代任务管理器 (可恢复)**（基于 `IFEO` 重定向）来替换系统默认任务管理器，切勿直接覆盖 `C:\Windows\System32\Taskmgr.exe`。
 
 ### 编译方法
 需要安装 Visual Studio 2022（或兼容版本的 Build Tools，“使用 C++ 的桌面开发”工作负载）：
@@ -73,7 +75,7 @@ build.bat
 build.bat
 ```
 
-构建完成后会在仓库根目录生成独立的 `Taskmgr.exe`（默认已列入 `.gitignore`，不会提交编译产物到仓库）。
+构建完成后会在仓库根目录生成独立的 `TaskmgrEnhanced.exe`（默认已列入 `.gitignore`，不会提交编译产物到仓库）。
 
 ### 常用启动参数
 - `/0` .. `/7`：启动时直接定位到第 0–7 个选项卡（例如 `/1` 直接打开性能页、`/7` 直接打开占用检查页）。

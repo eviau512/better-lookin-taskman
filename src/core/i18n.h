@@ -330,6 +330,30 @@ struct Strings {
     const wchar_t* searchCueProcesses;
     const wchar_t* searchCueDetails;
     const wchar_t* searchCueServices;
+
+    // Enhance Menu & IFEO (#51-#55)
+    const wchar_t* menuEnhance;
+    const wchar_t* enhKeepExplorer;
+    const wchar_t* enhReplaceTaskmgr;
+    const wchar_t* menuRestoreTaskmgr;
+    const wchar_t* ifeoChoiceTitle;
+    const wchar_t* ifeoChoiceDesc;
+    const wchar_t* ifeoChoiceUseCur;
+    const wchar_t* ifeoChoiceCopyToDir;
+    const wchar_t* ifeoChoiceCancel;
+    const wchar_t* ifeoWarnBadFilename;
+    const wchar_t* ifeoWarnTempPath;
+    const wchar_t* ifeoPickFolderTitle;
+    const wchar_t* ifeoConfirmOverwriteOther;
+    const wchar_t* ifeoCountdownTitle;
+    const wchar_t* ifeoCountdownBody;
+    const wchar_t* ifeoCountdownBtnFmt;
+    const wchar_t* ifeoCountdownBtnOk;
+    const wchar_t* ifeoConfirmRestore;
+    const wchar_t* ifeoRestoreDoneTitle;
+    const wchar_t* ifeoRestoreDoneBody;
+    const wchar_t* ifeoErrTitle;
+    const wchar_t* ifeoErrFailedFmt;
 };
 
 inline LangMode GetEffectiveLang(LangMode mode) {
@@ -663,7 +687,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d processes (%d protected core, %llu ms)",
         L"Search processes (name, PID)...",
         L"Search details (name, PID, command)...",
-        L"Search services (name, PID, group)..."
+        L"Search services (name, PID, group)...",
+        L"Enhance (&X)",
+        L"Revive Windows Explorer automatically if it exits (&E)",
+        L"Replace Task Manager (Reversible) (&R)",
+        L"Restore Original Task Manager",
+        L"Replace Task Manager (Reversible)",
+        L"Choose which TaskmgrEnhanced.exe location to register as the Windows Task Manager replacement (IFEO):",
+        L"Use Current Location",
+        L"Create in Folder...",
+        L"Cancel",
+        L"Current filename is Taskmgr.exe. Using it directly would cause IFEO recursion. Please click \"Create in Folder...\" to save as TaskmgrEnhanced.exe.",
+        L"Warning: Current file is in a temporary, Desktop, Downloads, or removable folder. Saving a copy in a permanent folder is recommended.",
+        L"Select a folder to save TaskmgrEnhanced.exe",
+        L"Another Task Manager replacement is already registered:\n%ls\n\nReplace it with TaskmgrEnhanced.exe?",
+        L"Task Manager Replacement Enabled",
+        L"Windows Task Manager calls now launch TaskmgrEnhanced.exe (via IFEO), and pre-launch sampling has been enabled.\n\nTo prevent accidental deletion or corruption, write/delete permissions on this file have been restricted.\nYou must disable \"Replace Task Manager (Reversible)\" before deleting this file.",
+        L"OK (%ds)",
+        L"OK",
+        L"Restore the original Windows Task Manager?\n\nThis will remove the IFEO redirection and unlock file permissions on TaskmgrEnhanced.exe so you can delete it if desired.",
+        L"Original Task Manager Restored",
+        L"Original Windows Task Manager has been restored and file protection on TaskmgrEnhanced.exe has been unlocked.\n\nIts folder has been opened. Close this Task Manager window first if you want to delete the file manually.",
+        L"Task Manager Replacement (IFEO)",
+        L"Operation failed or was cancelled (error %lu)."
     };
 
     static const Strings kZh = {
@@ -976,7 +1022,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d 个程序（不可结束核心进程 %d 个，耗时 %llu ms）",
         L"搜索进程（名称 / PID）...",
         L"搜索详细信息（名称 / PID / 命令行）...",
-        L"搜索服务（名称 / PID / 组）..."
+        L"搜索服务（名称 / PID / 组）...",
+        L"增强(&X)",
+        L"资源管理器意外退出时自动唤醒(&E)",
+        L"替代任务管理器 (可恢复)(&R)",
+        L"恢复原版任务管理器",
+        L"替代任务管理器 (可恢复)",
+        L"请选择用于替代系统默认任务管理器 (IFEO) 的程序位置：",
+        L"使用当前位置",
+        L"在指定位置新建...",
+        L"取消",
+        L"当前文件名为 Taskmgr.exe，直接在当前位置启用 IFEO 会导致递归启动。请点击“在指定位置新建...”将其保存为 TaskmgrEnhanced.exe。",
+        L"提示：当前程序位于临时目录、下载、桌面或可移动/网络驱动器中，建议在固定目录新建副本后再启用替换。",
+        L"选择保存 TaskmgrEnhanced.exe 的目标文件夹",
+        L"系统当前已配置其他任务管理器替代项 (IFEO Debugger)：\n%ls\n\n是否覆盖并替换为 TaskmgrEnhanced.exe？",
+        L"已启用任务管理器替换",
+        L"已成功设置 IFEO，此后打开任务管理器将启动当前程序，并已自动开启后台预采样。\n\n为防止误删或文件损坏，已对该程序启用防删除权限保护。\n如需删除此文件，必须先关闭 IFEO（点击顶部“恢复原版任务管理器”或在“增强”菜单中取消勾选）。",
+        L"确认 (%d秒)",
+        L"确认",
+        L"确定要关闭 IFEO 替换并恢复系统原版任务管理器吗？\n\n确认后将移除 IFEO 重定向，并解除 TaskmgrEnhanced.exe 的防删除权限保护。",
+        L"已恢复原版任务管理器",
+        L"已关闭 IFEO 并恢复系统原版任务管理器，同时已解除程序文件的防删除权限保护并为您打开所在文件夹。\n\n如需删除该文件，请先关闭当前任务管理器窗口后再手动删除。",
+        L"替代任务管理器 (IFEO)",
+        L"操作失败或已被取消（错误码：%lu）。"
     };
 
     static const Strings kZhTw = {
@@ -1289,7 +1357,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d 個程式（不可結束核心程序 %d 個，耗時 %llu ms）",
         L"搜尋處理程序（名稱 / PID）...",
         L"搜尋詳細資料（名稱 / PID / 命令列）...",
-        L"搜尋服務（名稱 / PID / 群組）..."
+        L"搜尋服務（名稱 / PID / 群組）...",
+        L"增強(&X)",
+        L"檔案總管意外結束時自動喚醒(&E)",
+        L"替代工作管理員 (可恢復)(&R)",
+        L"恢復原版工作管理員",
+        L"替代工作管理員 (可恢復)",
+        L"請選擇用於替代系統預設工作管理員 (IFEO) 的程式位置：",
+        L"使用目前位置",
+        L"於指定位置新建...",
+        L"取消",
+        L"目前檔案名稱為 Taskmgr.exe，直接在目前位置啟用 IFEO 會造成遞迴啟動。請按一下「於指定位置新建...」儲存為 TaskmgrEnhanced.exe。",
+        L"提示：目前程式位於暫存資料夾、下載、桌面或卸除式/網路磁碟機，建議先複製到固定資料夾再啟用。",
+        L"選擇儲存 TaskmgrEnhanced.exe 的資料夾",
+        L"系統目前已設定其他工作管理員替代程式 (IFEO Debugger)：\n%ls\n\n是否覆蓋並替換為 TaskmgrEnhanced.exe？",
+        L"已啟用工作管理員替代",
+        L"已成功設定 IFEO，之後開啟工作管理員將啟動此程式，並已自動開啟背景預取樣。\n\n為防止誤刪或檔案損毀，已對此程式啟用防刪除權限保護。\n必須先關閉 IFEO 後才能刪除此檔案。",
+        L"確認 (%d秒)",
+        L"確認",
+        L"確定要關閉 IFEO 替代並恢復系統原版工作管理員嗎？\n\n確認後將移除 IFEO 重新導向，並解除 TaskmgrEnhanced.exe 的防刪除權限保護。",
+        L"已恢復原版工作管理員",
+        L"已關閉 IFEO 並恢復系統原版工作管理員，同時已解除檔案保護並開啟所在資料夾。\n\n如需刪除此檔案，請先關閉目前的工作管理員視窗後再手動刪除。",
+        L"替代工作管理員 (IFEO)",
+        L"操作失敗或已取消（錯誤碼：%lu）。"
     };
 
     static const Strings kJa = {
@@ -1602,7 +1692,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d プロセス (保護されたコア %d 個、%llu ms)",
         L"プロセスを検索 (名前 / PID)...",
         L"詳細を検索 (名前 / PID / コマンド)...",
-        L"サービスを検索 (名前 / PID / グループ)..."
+        L"サービスを検索 (名前 / PID / グループ)...",
+        L"拡張(&X)",
+        L"エクスプローラーが終了したら自動的に再開(&E)",
+        L"タスク マネージャーを置き換える (復元可能)(&R)",
+        L"元のタスク マネージャーに戻す",
+        L"タスク マネージャーを置き換える (復元可能)",
+        L"Windows タスク マネージャーの置き換え (IFEO) に使用する場所を選択してください:",
+        L"現在の場所を使用",
+        L"別のフォルダーに作成...",
+        L"キャンセル",
+        L"現在のファイル名は Taskmgr.exe です。そのまま登録すると IFEO が再帰起動します。「別のフォルダーに作成...」から TaskmgrEnhanced.exe として保存してください。",
+        L"警告: 現在のファイルは一時フォルダー、ダウンロード、デスクトップ、またはリムーバブル ドライブにあります。固定フォルダーへコピーすることを推奨します。",
+        L"TaskmgrEnhanced.exe を保存するフォルダーを選択",
+        L"別のタスク マネージャー置き換え設定が既に存在します:\n%ls\n\nTaskmgrEnhanced.exe で上書きしますか？",
+        L"タスク マネージャーの置き換えを有効化しました",
+        L"IFEO 設定が完了し、事前サンプリングが有効になりました。\n\n誤削除や破損を防ぐため、このファイルに削除・書き込み保護を適用しました。\nファイルを削除するには、先に IFEO を無効にする必要があります。",
+        L"OK (%d秒)",
+        L"OK",
+        L"元の Windows タスク マネージャーに戻しますか？\n\nIFEO リダイレクトを解除し、TaskmgrEnhanced.exe のファイル保護を解除します。",
+        L"元のタスク マネージャーに戻しました",
+        L"IFEO を解除して元のタスク マネージャーに戻し、ファイル保護を解除してフォルダーを開きました。\n\nファイルを削除する場合は、このタスク マネージャーを閉じてから手動で削除してください。",
+        L"タスク マネージャーの置き換え (IFEO)",
+        L"操作に失敗したかキャンセルされました (エラー %lu)。"
     };
 
     static const Strings kKo = {
@@ -1915,7 +2027,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d개 프로세스 (보호된 핵심 %d개, %llu ms)",
         L"프로세스 검색 (이름 / PID)...",
         L"세부 정보 검색 (이름 / PID / 명령)...",
-        L"서비스 검색 (이름 / PID / 그룹)..."
+        L"서비스 검색 (이름 / PID / 그룹)...",
+        L"확장(&X)",
+        L"탐색기가 예기치 않게 종료되면 자동으로 다시 시작(&E)",
+        L"작업 관리자 대체 (복원 가능)(&R)",
+        L"원본 작업 관리자 복원",
+        L"작업 관리자 대체 (복원 가능)",
+        L"Windows 작업 관리자 대체(IFEO)에 등록할 TaskmgrEnhanced.exe 위치를 선택하세요:",
+        L"현재 위치 사용",
+        L"폴더에 새로 만들기...",
+        L"취소",
+        L"현재 파일 이름이 Taskmgr.exe입니다. 그대로 등록하면 IFEO 재귀 실행이 발생합니다. \"폴더에 새로 만들기...\"를 선택하여 TaskmgrEnhanced.exe로 저장하세요.",
+        L"경고: 현재 파일이 임시 폴더, 다운로드, 바탕 화면 또는 이동식 드라이브에 있습니다. 고정 폴더에 복사하는 것이 좋습니다.",
+        L"TaskmgrEnhanced.exe를 저장할 폴더 선택",
+        L"다른 작업 관리자 대체 항목이 이미 등록되어 있습니다:\n%ls\n\nTaskmgrEnhanced.exe로 교체하시겠습니까?",
+        L"작업 관리자 대체 활성화됨",
+        L"IFEO가 설정되었으며 사전 백그라운드 샘플링이 활성화되었습니다.\n\n실수로 삭제되거나 손상되지 않도록 이 파일의 삭제/쓰기 권한을 보호했습니다.\n파일을 삭제하려면 먼저 IFEO를 해제해야 합니다.",
+        L"확인 (%d초)",
+        L"확인",
+        L"원본 Windows 작업 관리자로 복원하시겠습니까?\n\nIFEO 리디렉션을 제거하고 TaskmgrEnhanced.exe의 파일 보호를 해제합니다.",
+        L"원본 작업 관리자 복원됨",
+        L"IFEO를 해제하고 원본 작업 관리자를 복원했으며 파일 보호를 풀고 폴더를 열었습니다.\n\n파일을 삭제하려면 먼저 이 작업 관리자 창을 닫은 후 수동으로 삭제하세요.",
+        L"작업 관리자 대체 (IFEO)",
+        L"작업이 실패했거나 취소되었습니다 (오류 %lu)."
     };
 
     static const Strings kDe = {
@@ -2228,7 +2362,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d Prozesse (%d geschützte Kerne, %llu ms)",
         L"Prozesse suchen (Name, PID)...",
         L"Details suchen (Name, PID, Befehl)...",
-        L"Dienste suchen (Name, PID, Gruppe)..."
+        L"Dienste suchen (Name, PID, Gruppe)...",
+        L"Erweitern (&X)",
+        L"Windows-Explorer nach unerwartetem Beenden automatisch neu starten (&E)",
+        L"Task-Manager ersetzen (Wiederherstellbar) (&R)",
+        L"Originalen Task-Manager wiederherstellen",
+        L"Task-Manager ersetzen (Wiederherstellbar)",
+        L"Wählen Sie den Speicherort für die Task-Manager-Ersetzung (IFEO):",
+        L"Aktuellen Pfad verwenden",
+        L"In Ordner erstellen...",
+        L"Abbrechen",
+        L"Der aktuelle Dateiname lautet Taskmgr.exe und würde eine IFEO-Rekursion auslösen. Bitte wählen Sie \"In Ordner erstellen...\", um als TaskmgrEnhanced.exe zu speichern.",
+        L"Hinweis: Die aktuelle Datei liegt in einem temporären Ordner, Downloads, Desktop oder auf einem Wechseldatenträger. Ein fester Ordner wird empfohlen.",
+        L"Ordner zum Speichern von TaskmgrEnhanced.exe wählen",
+        L"Es ist bereits ein anderer Task-Manager-Ersatz registriert:\n%ls\n\nDurch TaskmgrEnhanced.exe ersetzen?",
+        L"Task-Manager-Ersetzung aktiviert",
+        L"IFEO wurde eingerichtet und Hintergrund-Vorabtastung aktiviert.\n\nZum Schutz vor versehentlichem Löschen wurden Schreib-/Löschrechte für diese Datei gesperrt.\nDeaktivieren Sie zuerst IFEO, bevor Sie die Datei löschen.",
+        L"OK (%ds)",
+        L"OK",
+        L"Originalen Windows Task-Manager wiederherstellen?\n\nDadurch wird IFEO entfernt und der Löschschutz für TaskmgrEnhanced.exe aufgehoben.",
+        L"Originaler Task-Manager wiederhergestellt",
+        L"IFEO wurde deaktiviert, der originale Task-Manager wiederhergestellt und der Dateischutz aufgehoben. Der Ordner wurde geöffnet.\n\nSchließen Sie zuerst dieses Fenster, falls Sie die Datei manuell löschen möchten.",
+        L"Task-Manager-Ersetzung (IFEO)",
+        L"Vorgang fehlgeschlagen oder abgebrochen (Fehler %lu)."
     };
 
     static const Strings kFr = {
@@ -2541,7 +2697,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d processus (%d noyau protégé, %llu ms)",
         L"Rechercher un processus (nom, PID)...",
         L"Rechercher dans les détails (nom, PID)...",
-        L"Rechercher un service (nom, PID)..."
+        L"Rechercher un service (nom, PID)...",
+        L"Améliorer (&X)",
+        L"Relancer automatiquement l'Explorateur Windows s'il se ferme (&E)",
+        L"Remplacer le Gestionnaire des tâches (Réversible) (&R)",
+        L"Restaurer le Gestionnaire des tâches d'origine",
+        L"Remplacer le Gestionnaire des tâches (Réversible)",
+        L"Choisissez l'emplacement de TaskmgrEnhanced.exe pour le remplacement (IFEO) :",
+        L"Utiliser l'emplacement actuel",
+        L"Créer dans un dossier...",
+        L"Annuler",
+        L"Le fichier actuel se nomme Taskmgr.exe, ce qui provoquerait une récursion IFEO. Veuillez choisir « Créer dans un dossier... » pour l'enregistrer sous TaskmgrEnhanced.exe.",
+        L"Attention : le fichier se trouve dans un dossier temporaire, Téléchargements, Bureau ou lecteur amovible. Un dossier permanent est recommandé.",
+        L"Sélectionner un dossier pour TaskmgrEnhanced.exe",
+        L"Un autre remplacement du Gestionnaire des tâches est déjà enregistré :\n%ls\n\nLe remplacer par TaskmgrEnhanced.exe ?",
+        L"Remplacement du Gestionnaire des tâches activé",
+        L"La redirection IFEO et le pré-échantillonnage sont activés.\n\nPour éviter toute suppression accidentelle, les droits de suppression et d'écriture sur ce fichier ont été restreints.\nDésactivez IFEO avant de supprimer ce fichier.",
+        L"OK (%ds)",
+        L"OK",
+        L"Restaurer le Gestionnaire des tâches Windows d'origine ?\n\nCela supprimera la redirection IFEO et déverrouillera les permissions de TaskmgrEnhanced.exe.",
+        L"Gestionnaire des tâches d'origine restauré",
+        L"Le Gestionnaire des tâches d'origine a été restauré, la protection du fichier levée et le dossier ouvert.\n\nFermez d'abord cette fenêtre si vous souhaitez supprimer le fichier manuellement.",
+        L"Remplacement du Gestionnaire des tâches (IFEO)",
+        L"Échec de l'opération ou annulation (erreur %lu)."
     };
 
     static const Strings kEs = {
@@ -2854,7 +3032,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d procesos (%d críticos protegidos, %llu ms)",
         L"Buscar procesos (nombre, PID)...",
         L"Buscar detalles (nombre, PID, comando)...",
-        L"Buscar servicios (nombre, PID, grupo)..."
+        L"Buscar servicios (nombre, PID, grupo)...",
+        L"Mejoras (&X)",
+        L"Reactivar el Explorador de Windows automáticamente si se cierra (&E)",
+        L"Reemplazar Administrador de tareas (Reversible) (&R)",
+        L"Restaurar Administrador de tareas original",
+        L"Reemplazar Administrador de tareas (Reversible)",
+        L"Elija la ubicación de TaskmgrEnhanced.exe para registrar como reemplazo (IFEO):",
+        L"Usar ubicación actual",
+        L"Crear en carpeta...",
+        L"Cancelar",
+        L"El archivo actual se llama Taskmgr.exe y causaría recursión IFEO. Use \"Crear en carpeta...\" para guardarlo como TaskmgrEnhanced.exe.",
+        L"Aviso: el archivo está en una carpeta temporal, Descargas, Escritorio o unidad extraíble. Se recomienda guardarlo en una carpeta permanente.",
+        L"Seleccionar carpeta para guardar TaskmgrEnhanced.exe",
+        L"Ya hay otro reemplazo registrado:\n%ls\n\n¿Desea reemplazarlo por TaskmgrEnhanced.exe?",
+        L"Reemplazo del Administrador de tareas activado",
+        L"IFEO está activo y el muestreo previo en segundo plano se ha activado.\n\nPara evitar borrados accidentales, se restringieron los permisos de escritura y eliminación.\nDebe desactivar IFEO antes de eliminar este archivo.",
+        L"Aceptar (%ds)",
+        L"Aceptar",
+        L"¿Restaurar el Administrador de tareas original de Windows?\n\nSe quitará la redirección IFEO y se desbloqueará el archivo TaskmgrEnhanced.exe.",
+        L"Administrador de tareas original restaurado",
+        L"Se restauró el Administrador de tareas original, se desbloqueó el archivo y se abrió su carpeta.\n\nCierre esta ventana primero si desea eliminar el archivo manualmente.",
+        L"Reemplazo del Administrador de tareas (IFEO)",
+        L"La operación falló o fue cancelada (error %lu)."
     };
 
     static const Strings kRu = {
@@ -3167,7 +3367,29 @@ inline const Strings& GetStrings(LangMode mode) {
         L"%ls %d процессов (защищено ядром %d, %llu мс)",
         L"Поиск процессов (имя, PID)...",
         L"Поиск сведений (имя, PID, команда)...",
-        L"Поиск служб (имя, PID, группа)..."
+        L"Поиск служб (имя, PID, группа)...",
+        L"Улучшения (&X)",
+        L"Автоматически перезапускать Проводник при сбое (&E)",
+        L"Заменить Диспетчер задач (обратимо) (&R)",
+        L"Восстановить исходный Диспетчер задач",
+        L"Заменить Диспетчер задач (обратимо)",
+        L"Выберите расположение TaskmgrEnhanced.exe для замены через IFEO:",
+        L"Использовать текущее расположение",
+        L"Создать в папке...",
+        L"Отмена",
+        L"Текущее имя файла — Taskmgr.exe, что вызовет рекурсию IFEO. Нажмите «Создать в папке...», чтобы сохранить как TaskmgrEnhanced.exe.",
+        L"Предупреждение: файл находится во временной папке, Загрузках, на Рабочем столе или съемном диске. Рекомендуется постоянная папка.",
+        L"Выберите папку для сохранения TaskmgrEnhanced.exe",
+        L"Уже зарегистрирован другой обработчик IFEO:\n%ls\n\nЗаменить его на TaskmgrEnhanced.exe?",
+        L"Замена Диспетчера задач включена",
+        L"Замена IFEO настроена, предвыборка в фоне включена.\n\nДля защиты от случайного удаления доступ на запись и удаление этого файла ограничен.\nПеред удалением файла сначала отключите IFEO.",
+        L"ОК (%d с)",
+        L"ОК",
+        L"Восстановить исходный Диспетчер задач Windows?\n\nПеренаправление IFEO будет удалено, а защита файла TaskmgrEnhanced.exe снята.",
+        L"Исходный Диспетчер задач восстановлен",
+        L"Исходный Диспетчер задач восстановлен, защита файла снята, папка открыта.\n\nЧтобы удалить файл вручную, сначала закройте это окно Диспетчера задач.",
+        L"Замена Диспетчера задач (IFEO)",
+        L"Операция не выполнена или отменена (ошибка %lu)."
     };
 
     switch (GetEffectiveLang(mode)) {

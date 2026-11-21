@@ -8,6 +8,7 @@
 
 #include "resource.h"
 #include "core/format_util.h"
+#include "core/ifeo_manager.h"
 #include "core/perf_monitor.h"
 #include "ui/main_window.h"
 
@@ -92,15 +93,21 @@ int RunPerfDaemon(HINSTANCE hInstance) {
 }
 
 void EnsureDaemonRunningAndRegistered() {
-    wchar_t exePath[MAX_PATH] = {};
-    DWORD len = GetModuleFileNameW(nullptr, exePath, ARRAYSIZE(exePath));
-    if (len == 0 || len >= ARRAYSIZE(exePath)) return;
+    std::wstring daemonExe;
+    auto ifeoSt = taskman::IfeoManager::QueryStatus();
+    if (ifeoSt.isOurs && !ifeoSt.resolvedPath.empty() &&
+        GetFileAttributesW(ifeoSt.resolvedPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        daemonExe = ifeoSt.resolvedPath;
+    } else {
+        daemonExe = taskman::IfeoManager::GetCurrentExePath();
+    }
+    if (daemonExe.empty()) return;
 
-    std::wstring cmd = std::wstring(L"\"") + exePath + L"\" /daemon";
+    std::wstring cmd = L"\"" + daemonExe + L"\" /daemon";
     HKEY hRun = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                       0, KEY_READ | KEY_WRITE, &hRun) == ERROR_SUCCESS) {
-        wchar_t curVal[MAX_PATH + 32] = {};
+        wchar_t curVal[MAX_PATH * 4 + 32] = {};
         DWORD cb = sizeof(curVal);
         DWORD type = 0;
         if (RegQueryValueExW(hRun, L"BetterWin10TaskmanDaemon", nullptr, &type,
@@ -117,7 +124,7 @@ void EnsureDaemonRunningAndRegistered() {
         STARTUPINFOW si{ sizeof(si) };
         PROCESS_INFORMATION pi{};
         std::wstring mutableCmd = cmd;
-        if (CreateProcessW(exePath, &mutableCmd[0], nullptr, nullptr, FALSE,
+        if (CreateProcessW(daemonExe.c_str(), &mutableCmd[0], nullptr, nullptr, FALSE,
                            CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
             CloseHandle(pi.hThread);
             CloseHandle(pi.hProcess);
@@ -146,6 +153,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     bool isElevatedRestart = false;
     bool allowMultiple = false;
     bool isDaemon = false;
+    bool isIfeoInstall = false;
+    bool isIfeoUninstall = false;
+    std::wstring ifeoTargetPath;
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (argv) {
@@ -157,12 +167,29 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
             } else if (_wcsicmp(argv[i], L"/daemon") == 0 || _wcsicmp(argv[i], L"-daemon") == 0 ||
                        _wcsicmp(argv[i], L"--daemon") == 0) {
                 isDaemon = true;
+            } else if (_wcsicmp(argv[i], L"/ifeo-install") == 0 || _wcsicmp(argv[i], L"-ifeo-install") == 0) {
+                isIfeoInstall = true;
+                if (i + 1 < argc) ifeoTargetPath = argv[++i];
+            } else if (_wcsicmp(argv[i], L"/ifeo-uninstall") == 0 || _wcsicmp(argv[i], L"-ifeo-uninstall") == 0) {
+                isIfeoUninstall = true;
+                if (i + 1 < argc) ifeoTargetPath = argv[++i];
             } else if ((argv[i][0] == L'/' || argv[i][0] == L'-') &&
                        argv[i][1] >= L'0' && argv[i][1] <= L'7' && argv[i][2] == L'\0') {
                 requestedTab = argv[i][1] - L'0';
             }
         }
         LocalFree(argv);
+    }
+
+    if (isIfeoInstall || isIfeoUninstall) {
+        if (ifeoTargetPath.empty()) {
+            ifeoTargetPath = taskman::IfeoManager::GetCurrentExePath();
+        }
+        DWORD opErr = ERROR_SUCCESS;
+        bool ok = isIfeoInstall
+            ? taskman::IfeoManager::InstallDirect(ifeoTargetPath, &opErr)
+            : taskman::IfeoManager::UninstallDirect(ifeoTargetPath, &opErr);
+        return ok ? 0 : static_cast<int>(opErr ? opErr : ERROR_GEN_FAILURE);
     }
 
     if (isDaemon) {
@@ -229,6 +256,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         if (!allowMultiple) {
             taskman::AppSettings initSettings;
             taskman::LoadSettings(initSettings);
+            if (taskman::IfeoManager::IsOurIfeoEnabled() &&
+                !initSettings.preLaunchSamplingUserSet && !initSettings.preLaunchSampling) {
+                initSettings.preLaunchSampling = true;
+                taskman::SaveSettings(initSettings);
+            }
             if (initSettings.preLaunchSampling) {
                 EnsureDaemonRunningAndRegistered();
             } else {

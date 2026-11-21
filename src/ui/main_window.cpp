@@ -4,6 +4,7 @@
 #include "../core/theme.h"
 #include "../core/i18n.h"
 #include "../core/format_util.h"
+#include "../core/ifeo_manager.h"
 
 #include <objidl.h>
 #include <gdiplus.h>
@@ -115,6 +116,13 @@ LRESULT CALLBACK SearchEditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
 bool MainWindow::Create(int nCmdShow, int initialTab) {
     LoadSettings(settings_);
+    if (IfeoManager::IsOurIfeoEnabled() && !settings_.preLaunchSamplingUserSet && !settings_.preLaunchSampling) {
+        settings_.preLaunchSampling = true;
+        SaveSettings(settings_);
+    }
+    if (settings_.keepExplorerAlive) {
+        IfeoManager::EnsureExplorerAliveAsync();
+    }
     if (initialTab >= 0 && initialTab < kTabCount) {
         settings_.activeTab = initialTab;
         settings_.moreDetails = true;
@@ -428,7 +436,6 @@ void MainWindow::RebuildMenu() {
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_HIDE_WHEN_MINIMIZED, s.menuHideWhenMinimized);
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_SHOW_FULL_ACCOUNT, s.menuShowFullAccount);
     AppendMenuW(hOpt, MF_STRING, IDM_OPT_SHOW_ALL_HISTORY, s.menuShowAllHistory);
-    AppendMenuW(hOpt, MF_STRING, IDM_OPT_PRELAUNCH_SAMPLING, s.menuPreLaunchSampling);
     AppendMenuW(hOpt, MF_SEPARATOR, 0, nullptr);
 
     HMENU hTheme = CreatePopupMenu();
@@ -454,6 +461,13 @@ void MainWindow::RebuildMenu() {
 
     AppendMenuW(hRoot, MF_POPUP, reinterpret_cast<UINT_PTR>(hOpt), s.menuOptions);
 
+    HMENU hEnh = CreatePopupMenu();
+    AppendMenuW(hEnh, MF_STRING, IDM_OPT_PRELAUNCH_SAMPLING, s.menuPreLaunchSampling);
+    AppendMenuW(hEnh, MF_STRING, IDM_ENH_KEEP_EXPLORER, s.enhKeepExplorer);
+    AppendMenuW(hEnh, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(hEnh, MF_STRING, IDM_ENH_REPLACE_TASKMGR, s.enhReplaceTaskmgr);
+    AppendMenuW(hRoot, MF_POPUP, reinterpret_cast<UINT_PTR>(hEnh), s.menuEnhance);
+
     HMENU hView = CreatePopupMenu();
     AppendMenuW(hView, MF_STRING, IDM_VIEW_REFRESH_NOW, s.menuRefreshNow);
     HMENU hSpeed = CreatePopupMenu();
@@ -472,6 +486,9 @@ void MainWindow::RebuildMenu() {
     AppendMenuW(hRoot, MF_POPUP, reinterpret_cast<UINT_PTR>(hView), s.menuView);
 
     AppendMenuW(hRoot, MF_STRING, IDM_HELP_ABOUT, s.menuAbout);
+    if (IfeoManager::IsOurIfeoEnabled()) {
+        AppendMenuW(hRoot, MF_STRING, IDM_ENH_RESTORE_TASKMGR, s.menuRestoreTaskmgr);
+    }
 
     HMENU old = hMainMenu_;
     hMainMenu_ = hRoot;
@@ -496,6 +513,8 @@ void MainWindow::UpdateMenuChecks() {
     checkItem(IDM_OPT_SHOW_FULL_ACCOUNT, settings_.showFullAccountName);
     checkItem(IDM_OPT_SHOW_ALL_HISTORY, settings_.showAllHistory);
     checkItem(IDM_OPT_PRELAUNCH_SAMPLING, settings_.preLaunchSampling);
+    checkItem(IDM_ENH_KEEP_EXPLORER, settings_.keepExplorerAlive);
+    checkItem(IDM_ENH_REPLACE_TASKMGR, IfeoManager::IsOurIfeoEnabled());
 
     checkItem(IDM_OPT_THEME_SYSTEM, settings_.themeMode == ThemeMode::System);
     checkItem(IDM_OPT_THEME_LIGHT, settings_.themeMode == ThemeMode::Light);
@@ -1109,10 +1128,16 @@ void MainWindow::UpdateAlwaysOnTop() {
 
 void MainWindow::SyncPreLaunchDaemon() {
     if (settings_.preLaunchSampling) {
-        wchar_t exePath[MAX_PATH] = {};
-        DWORD len = GetModuleFileNameW(nullptr, exePath, ARRAYSIZE(exePath));
-        if (len > 0 && len < ARRAYSIZE(exePath)) {
-            std::wstring cmd = std::wstring(L"\"") + exePath + L"\" /daemon";
+        std::wstring daemonExe;
+        auto ifeoSt = IfeoManager::QueryStatus();
+        if (ifeoSt.isOurs && !ifeoSt.resolvedPath.empty() &&
+            GetFileAttributesW(ifeoSt.resolvedPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            daemonExe = ifeoSt.resolvedPath;
+        } else {
+            daemonExe = IfeoManager::GetCurrentExePath();
+        }
+        if (!daemonExe.empty()) {
+            std::wstring cmd = L"\"" + daemonExe + L"\" /daemon";
             HKEY hRun = nullptr;
             if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                               0, KEY_READ | KEY_WRITE, &hRun) == ERROR_SUCCESS) {
@@ -1125,7 +1150,7 @@ void MainWindow::SyncPreLaunchDaemon() {
                 STARTUPINFOW si{ sizeof(si) };
                 PROCESS_INFORMATION pi{};
                 std::wstring mutableCmd = cmd;
-                if (CreateProcessW(exePath, &mutableCmd[0], nullptr, nullptr, FALSE,
+                if (CreateProcessW(daemonExe.c_str(), &mutableCmd[0], nullptr, nullptr, FALSE,
                                    CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
                     CloseHandle(pi.hThread);
                     CloseHandle(pi.hProcess);
@@ -1144,6 +1169,100 @@ void MainWindow::SyncPreLaunchDaemon() {
             PostMessageW(hDaemon, WM_CLOSE, 0, 0);
         }
     }
+}
+
+void MainWindow::ToggleReplaceTaskManager() {
+    IfeoStatus st = IfeoManager::QueryStatus();
+    if (st.isOurs) {
+        RestoreOriginalTaskManager();
+        return;
+    }
+
+    PathCheckResult pathCheck = IfeoManager::InspectCurrentExePath();
+    std::wstring chosenTarget;
+    IfeoPathChoice choice = ShowIfeoPathChoiceDialog(hwnd_, settings_, pathCheck, chosenTarget);
+    if (choice == IfeoPathChoice::Cancel || chosenTarget.empty()) {
+        return;
+    }
+
+    const Strings& s = GetStrings(settings_.langMode);
+    st = IfeoManager::QueryStatus();
+    if (st.hasEntry && !st.isOurs) {
+        const wchar_t* curDisplay = st.resolvedPath.empty() ? st.rawDebugger.c_str() : st.resolvedPath.c_str();
+        wchar_t prompt[1024] = {};
+        swprintf_s(prompt, s.ifeoConfirmOverwriteOther, curDisplay);
+        if (MessageBoxW(hwnd_, prompt, s.ifeoChoiceTitle,
+                        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
+            return;
+        }
+    }
+
+    DWORD err = ERROR_SUCCESS;
+    if (!IfeoManager::InstallReversible(hwnd_, chosenTarget, &err)) {
+        if (err != ERROR_CANCELLED) {
+            wchar_t errBuf[256] = {};
+            swprintf_s(errBuf, s.ifeoErrFailedFmt, err);
+            MessageBoxW(hwnd_, errBuf, s.ifeoErrTitle, MB_OK | MB_ICONERROR);
+        }
+        return;
+    }
+
+    if (!settings_.preLaunchSamplingUserSet && !settings_.preLaunchSampling) {
+        settings_.preLaunchSampling = true;
+    }
+    SyncPreLaunchDaemon();
+    SaveSettings(settings_);
+    RebuildMenu();
+
+    ShowIfeoCountdownDialog(hwnd_, settings_, chosenTarget);
+}
+
+void MainWindow::RestoreOriginalTaskManager() {
+    const Strings& s = GetStrings(settings_.langMode);
+    if (MessageBoxW(hwnd_, s.ifeoConfirmRestore, s.ifeoErrTitle,
+                    MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) {
+        return;
+    }
+
+    IfeoStatus st = IfeoManager::QueryStatus();
+    std::wstring targetToUnlock = !st.resolvedPath.empty()
+        ? st.resolvedPath
+        : IfeoManager::GetCurrentExePath();
+
+    DWORD err = ERROR_SUCCESS;
+    if (!IfeoManager::UninstallReversible(hwnd_, targetToUnlock, &err)) {
+        if (err != ERROR_CANCELLED) {
+            wchar_t errBuf[256] = {};
+            swprintf_s(errBuf, s.ifeoErrFailedFmt, err);
+            MessageBoxW(hwnd_, errBuf, s.ifeoErrTitle, MB_OK | MB_ICONERROR);
+        }
+        return;
+    }
+
+    // Turn off auto-sampling & cleanly shut down any background daemon so the unlocked binary can be deleted freely.
+    settings_.preLaunchSampling = false;
+    settings_.preLaunchSamplingUserSet = false;
+    HWND hDaemon = FindWindowExW(HWND_MESSAGE, nullptr, L"BetterWin10TaskmanDaemonWnd", nullptr);
+    if (hDaemon) {
+        DWORD dPid = 0;
+        GetWindowThreadProcessId(hDaemon, &dPid);
+        HANDLE hProc = dPid ? OpenProcess(SYNCHRONIZE, FALSE, dPid) : nullptr;
+        PostMessageW(hDaemon, WM_CLOSE, 0, 0);
+        if (hProc) {
+            WaitForSingleObject(hProc, 1500);
+            CloseHandle(hProc);
+        }
+    }
+    SyncPreLaunchDaemon();
+    SaveSettings(settings_);
+
+    RebuildMenu();
+
+    if (GetEnvironmentVariableW(L"TASKMGR_ENH_IFEO_NO_EXPLORER", nullptr, 0) == 0) {
+        OpenFileLocationInExplorer(targetToUnlock);
+    }
+
+    MessageBoxW(hwnd_, s.ifeoRestoreDoneBody, s.ifeoRestoreDoneTitle, MB_OK | MB_ICONINFORMATION);
 }
 
 void MainWindow::UpdatePrimaryActionButton() {
@@ -1980,9 +2099,24 @@ void MainWindow::HandleCommand(UINT id) {
         break;
     case IDM_OPT_PRELAUNCH_SAMPLING:
         settings_.preLaunchSampling = !settings_.preLaunchSampling;
+        settings_.preLaunchSamplingUserSet = true;
         SyncPreLaunchDaemon();
         SaveSettings(settings_);
         UpdateMenuChecks();
+        break;
+    case IDM_ENH_KEEP_EXPLORER:
+        settings_.keepExplorerAlive = !settings_.keepExplorerAlive;
+        SaveSettings(settings_);
+        UpdateMenuChecks();
+        if (settings_.keepExplorerAlive) {
+            IfeoManager::EnsureExplorerAliveAsync();
+        }
+        break;
+    case IDM_ENH_REPLACE_TASKMGR:
+        ToggleReplaceTaskManager();
+        break;
+    case IDM_ENH_RESTORE_TASKMGR:
+        RestoreOriginalTaskManager();
         break;
 
     case IDM_OPT_THEME_SYSTEM:

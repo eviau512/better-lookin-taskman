@@ -80,6 +80,30 @@ BEGIN
     DEFPUSHBUTTON   "OK", IDOK, 176, 80, 50, 14
 END
 
+IDD_IFEO_PATH_CHOICE DIALOGEX 0, 0, 304, 144
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Replace Task Manager (Reversible)"
+FONT 9, "Segoe UI"
+BEGIN
+    ICON            IDI_APP_ICON, IDC_STATIC, 12, 12, 20, 20
+    LTEXT           "", IDC_IFEO_PATH_DESC, 42, 12, 250, 58
+    EDITTEXT        IDC_IFEO_CUR_PATH, 42, 74, 250, 14, ES_READONLY | ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "Use Current Location", IDC_IFEO_USE_CURRENT, 12, 114, 104, 16
+    PUSHBUTTON      "Create in Folder...", IDC_IFEO_COPY_TO_DIR, 122, 114, 104, 16
+    PUSHBUTTON      "Cancel", IDCANCEL, 242, 114, 50, 16
+END
+
+IDD_IFEO_COUNTDOWN DIALOGEX 0, 0, 294, 138
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Task Manager Replacement Enabled"
+FONT 9, "Segoe UI"
+BEGIN
+    ICON            IDI_APP_ICON, IDC_STATIC, 12, 12, 20, 20
+    LTEXT           "", IDC_IFEO_CD_TEXT, 42, 12, 240, 62
+    EDITTEXT        IDC_IFEO_CD_PATH, 42, 78, 240, 14, ES_READONLY | ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK (3s)", IDOK, 202, 108, 80, 16, WS_DISABLED
+END
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 0,0,0,APP_BUILD_NUM
  PRODUCTVERSION 0,0,0,APP_BUILD_NUM
@@ -95,8 +119,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "Task Manager"
             VALUE "FileVersion", APP_BUILD_TAG_A
-            VALUE "InternalName", "taskmgr.exe"
-            VALUE "OriginalFilename", "Taskmgr.exe"
+            VALUE "InternalName", "TaskmgrEnhanced.exe"
+            VALUE "OriginalFilename", "TaskmgrEnhanced.exe"
             VALUE "ProductName", "Better Lookin Win10 Task Manager"
             VALUE "ProductVersion", APP_BUILD_TAG_A
         END

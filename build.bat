@@ -63,6 +63,7 @@ cl.exe /nologo /c /utf-8 /std:c++17 /O2 /W3 /EHsc /MT /DUNICODE /D_UNICODE /DNOM
     src\core\app_history.cpp ^
     src\core\uwp_apps.cpp ^
     src\core\lock_checker.cpp ^
+    src\core\ifeo_manager.cpp ^
     src\ui\listview_theme.cpp ^
     src\ui\dialogs.cpp ^
     src\ui\tab_processes.cpp ^
@@ -76,9 +77,9 @@ cl.exe /nologo /c /utf-8 /std:c++17 /O2 /W3 /EHsc /MT /DUNICODE /D_UNICODE /DNOM
     src\ui\main_window.cpp
 if errorlevel 1 exit /b 1
 
-echo [3/3] Linking single-file Taskmgr.exe...
-powershell -NoProfile -Command "$t = Join-Path (Get-Location) 'Taskmgr.exe'; Get-Process Taskmgr -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $t } | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>&1
-link.exe /nologo /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /OUT:Taskmgr.exe ^
+echo [3/3] Linking single-file TaskmgrEnhanced.exe...
+powershell -NoProfile -Command "$t = Join-Path (Get-Location) 'TaskmgrEnhanced.exe'; Get-Process TaskmgrEnhanced -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $t } | Stop-Process -Force -ErrorAction SilentlyContinue" >nul 2>&1
+link.exe /nologo /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /OUT:TaskmgrEnhanced.exe ^
     build\app.res ^
     build\main.obj ^
     build\settings.obj ^
@@ -91,6 +92,7 @@ link.exe /nologo /SUBSYSTEM:WINDOWS /OPT:REF /OPT:ICF /OUT:Taskmgr.exe ^
     build\app_history.obj ^
     build\uwp_apps.obj ^
     build\lock_checker.obj ^
+    build\ifeo_manager.obj ^
     build\listview_theme.obj ^
     build\dialogs.obj ^
     build\tab_processes.obj ^
@@ -111,5 +113,5 @@ if errorlevel 1 exit /b 1
 > res\build_number.txt (echo !NEXT_BUILD!)
 
 echo.
-echo Built single standalone executable: Taskmgr.exe (!BUILD_TAG!)
-for %%A in (Taskmgr.exe) do echo Size: %%~zA bytes
+echo Built single standalone executable: TaskmgrEnhanced.exe (!BUILD_TAG!)
+for %%A in (TaskmgrEnhanced.exe) do echo Size: %%~zA bytes

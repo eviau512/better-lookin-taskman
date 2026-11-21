@@ -69,6 +69,8 @@ struct AppSettings {
     bool showFullAccountName = false;
     bool showAllHistory = false;
     bool preLaunchSampling = false;
+    bool preLaunchSamplingUserSet = false;
+    bool keepExplorerAlive = true;
     bool groupByType = true;
     bool showKernelTimes = false;
     bool cpuLogicalView = false;

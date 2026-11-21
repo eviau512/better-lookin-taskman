@@ -3,7 +3,7 @@
   <assemblyIdentity
       version="10.0.19045.0"
       processorArchitecture="*"
-      name="BetterWin10Taskman.Taskmgr"
+      name="BetterWin10Taskman.TaskmgrEnhanced"
       type="win32"/>
   <description>Windows 10 Task Manager (Light/Dark Native Edition)</description>
   <dependency>

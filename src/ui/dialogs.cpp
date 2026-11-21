@@ -8,6 +8,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #include <cwchar>
 #include <vector>
 
@@ -423,6 +424,252 @@ static INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 void ShowAboutDialog(HWND parent, const AppSettings& settings) {
     DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_ABOUT),
                     parent, AboutDlgProc, reinterpret_cast<LPARAM>(&settings));
+}
+
+// ============================================================================
+// IFEO Path Choice Dialog (#52)
+// ============================================================================
+namespace {
+
+bool PickTargetFolder(HWND parent, const wchar_t* title, std::wstring& outDir) {
+    wchar_t envDir[MAX_PATH * 4] = {};
+    DWORD envLen = GetEnvironmentVariableW(L"TASKMGR_ENH_IFEO_TEST_COPY_DIR", envDir, ARRAYSIZE(envDir));
+    if (envLen > 0 && envLen < ARRAYSIZE(envDir)) {
+        outDir = envDir;
+        while (outDir.size() > 3 && (outDir.back() == L'\\' || outDir.back() == L'/')) outDir.pop_back();
+        return !outDir.empty();
+    }
+
+    IFileOpenDialog* pfd = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
+    if (FAILED(hr) || !pfd) return false;
+
+    DWORD opts = 0;
+    if (SUCCEEDED(pfd->GetOptions(&opts))) {
+        pfd->SetOptions(opts | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    }
+    if (title && *title) pfd->SetTitle(title);
+
+    bool ok = false;
+    if (SUCCEEDED(pfd->Show(parent))) {
+        IShellItem* psi = nullptr;
+        if (SUCCEEDED(pfd->GetResult(&psi)) && psi) {
+            PWSTR pszPath = nullptr;
+            if (SUCCEEDED(psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath)) && pszPath) {
+                outDir = pszPath;
+                CoTaskMemFree(pszPath);
+                while (outDir.size() > 3 && (outDir.back() == L'\\' || outDir.back() == L'/')) {
+                    outDir.pop_back();
+                }
+                ok = !outDir.empty();
+            }
+            psi->Release();
+        }
+    }
+    pfd->Release();
+    return ok;
+}
+
+struct IfeoChoiceCtx {
+    const AppSettings* settings = nullptr;
+    const PathCheckResult* pathCheck = nullptr;
+    IfeoPathChoice choice = IfeoPathChoice::Cancel;
+    std::wstring targetPath;
+};
+
+struct IfeoCountdownCtx {
+    const AppSettings* settings = nullptr;
+    std::wstring protectedPath;
+    int remainingSec = 3;
+};
+
+constexpr UINT_PTR kIfeoCountdownTimerId = 1;
+
+} // namespace
+
+static INT_PTR CALLBACK IfeoPathChoiceDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<IfeoChoiceCtx*>(GetWindowLongPtrW(hwnd, DWLP_USER));
+    switch (msg) {
+    case WM_INITDIALOG: {
+        ctx = reinterpret_cast<IfeoChoiceCtx*>(lParam);
+        SetWindowLongPtrW(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+        const auto& s = GetStrings(ctx->settings->langMode);
+        SetWindowTextW(hwnd, s.ifeoChoiceTitle);
+
+        std::wstring desc = s.ifeoChoiceDesc;
+        if (ctx->pathCheck->isBadFilename) {
+            desc += L"\r\n\r\n";
+            desc += s.ifeoWarnBadFilename;
+        } else if (ctx->pathCheck->isVolatilePath) {
+            desc += L"\r\n\r\n";
+            desc += s.ifeoWarnTempPath;
+        }
+        SetDlgItemTextW(hwnd, IDC_IFEO_PATH_DESC, desc.c_str());
+        SetDlgItemTextW(hwnd, IDC_IFEO_CUR_PATH, ctx->pathCheck->currentExePath.c_str());
+        SetDlgItemTextW(hwnd, IDC_IFEO_USE_CURRENT, s.ifeoChoiceUseCur);
+        SetDlgItemTextW(hwnd, IDC_IFEO_COPY_TO_DIR, s.ifeoChoiceCopyToDir);
+        SetDlgItemTextW(hwnd, IDCANCEL, s.ifeoChoiceCancel);
+
+        if (ctx->pathCheck->isBadFilename) {
+            HWND hUseCur = GetDlgItem(hwnd, IDC_IFEO_USE_CURRENT);
+            HWND hCopy = GetDlgItem(hwnd, IDC_IFEO_COPY_TO_DIR);
+            EnableWindow(hUseCur, FALSE);
+            SendMessageW(hUseCur, BM_SETSTYLE, BS_PUSHBUTTON, TRUE);
+            SendMessageW(hCopy, BM_SETSTYLE, BS_DEFPUSHBUTTON, TRUE);
+            SendMessageW(hwnd, DM_SETDEFID, IDC_IFEO_COPY_TO_DIR, 0);
+            SetFocus(hCopy);
+        }
+
+        ThemeDialogWindow(hwnd);
+        return ctx->pathCheck->isBadFilename ? FALSE : TRUE;
+    }
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORBTN: {
+        HBRUSH br = ThemeManager::Instance().HandleCtlColor(msg, reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam));
+        if (br) return reinterpret_cast<INT_PTR>(br);
+        break;
+    }
+    case WM_COMMAND: {
+        WORD id = LOWORD(wParam);
+        if (!ctx) break;
+        if (id == IDC_IFEO_USE_CURRENT) {
+            if (!ctx->pathCheck->isBadFilename) {
+                ctx->choice = IfeoPathChoice::UseCurrent;
+                ctx->targetPath = ctx->pathCheck->currentExePath;
+                EndDialog(hwnd, IDOK);
+            }
+            return TRUE;
+        }
+        if (id == IDC_IFEO_COPY_TO_DIR) {
+            const auto& s = GetStrings(ctx->settings->langMode);
+            std::wstring chosenDir;
+            if (PickTargetFolder(hwnd, s.ifeoPickFolderTitle, chosenDir) && !chosenDir.empty()) {
+                std::wstring joined = chosenDir;
+                if (joined.back() != L'\\' && joined.back() != L'/') joined += L'\\';
+                joined += L"TaskmgrEnhanced.exe";
+                ctx->choice = IfeoPathChoice::CopyToFolder;
+                ctx->targetPath = joined;
+                EndDialog(hwnd, IDOK);
+            }
+            return TRUE;
+        }
+        if (id == IDCANCEL) {
+            ctx->choice = IfeoPathChoice::Cancel;
+            EndDialog(hwnd, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    }
+    return FALSE;
+}
+
+IfeoPathChoice ShowIfeoPathChoiceDialog(HWND parent, const AppSettings& settings,
+                                        const PathCheckResult& pathCheck, std::wstring& outTargetPath) {
+    IfeoChoiceCtx ctx{ &settings, &pathCheck, IfeoPathChoice::Cancel, L"" };
+    INT_PTR res = DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_IFEO_PATH_CHOICE),
+                                  parent, IfeoPathChoiceDlgProc, reinterpret_cast<LPARAM>(&ctx));
+    if (res == IDOK && ctx.choice != IfeoPathChoice::Cancel && !ctx.targetPath.empty()) {
+        outTargetPath = ctx.targetPath;
+        return ctx.choice;
+    }
+    outTargetPath.clear();
+    return IfeoPathChoice::Cancel;
+}
+
+// ============================================================================
+// IFEO 3s Countdown Protection Dialog (#53)
+// ============================================================================
+static void UpdateCountdownButtonText(HWND hwnd, const IfeoCountdownCtx* ctx) {
+    const auto& s = GetStrings(ctx->settings->langMode);
+    if (ctx->remainingSec > 0) {
+        wchar_t buf[64] = {};
+        swprintf_s(buf, s.ifeoCountdownBtnFmt, ctx->remainingSec);
+        SetDlgItemTextW(hwnd, IDOK, buf);
+    } else {
+        SetDlgItemTextW(hwnd, IDOK, s.ifeoCountdownBtnOk);
+    }
+}
+
+static INT_PTR CALLBACK IfeoCountdownDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    auto* ctx = reinterpret_cast<IfeoCountdownCtx*>(GetWindowLongPtrW(hwnd, DWLP_USER));
+    switch (msg) {
+    case WM_INITDIALOG: {
+        ctx = reinterpret_cast<IfeoCountdownCtx*>(lParam);
+        SetWindowLongPtrW(hwnd, DWLP_USER, reinterpret_cast<LONG_PTR>(ctx));
+        const auto& s = GetStrings(ctx->settings->langMode);
+        SetWindowTextW(hwnd, s.ifeoCountdownTitle);
+        SetDlgItemTextW(hwnd, IDC_IFEO_CD_TEXT, s.ifeoCountdownBody);
+        SetDlgItemTextW(hwnd, IDC_IFEO_CD_PATH, ctx->protectedPath.c_str());
+
+        HWND hOk = GetDlgItem(hwnd, IDOK);
+        EnableWindow(hOk, FALSE);
+        UpdateCountdownButtonText(hwnd, ctx);
+        if (HMENU hSys = GetSystemMenu(hwnd, FALSE)) {
+            EnableMenuItem(hSys, SC_CLOSE, MF_BYCOMMAND | MF_GRAYED);
+        }
+
+        SetTimer(hwnd, kIfeoCountdownTimerId, 1000, nullptr);
+        ThemeDialogWindow(hwnd);
+        return TRUE;
+    }
+    case WM_TIMER:
+        if (ctx && wParam == kIfeoCountdownTimerId) {
+            if (ctx->remainingSec > 1) {
+                --ctx->remainingSec;
+                UpdateCountdownButtonText(hwnd, ctx);
+            } else {
+                ctx->remainingSec = 0;
+                KillTimer(hwnd, kIfeoCountdownTimerId);
+                UpdateCountdownButtonText(hwnd, ctx);
+                HWND hOk = GetDlgItem(hwnd, IDOK);
+                EnableWindow(hOk, TRUE);
+                if (HMENU hSys = GetSystemMenu(hwnd, FALSE)) {
+                    EnableMenuItem(hSys, SC_CLOSE, MF_BYCOMMAND | MF_ENABLED);
+                }
+                SendMessageW(hwnd, DM_SETDEFID, IDOK, 0);
+                SetFocus(hOk);
+            }
+            return TRUE;
+        }
+        break;
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORBTN: {
+        HBRUSH br = ThemeManager::Instance().HandleCtlColor(msg, reinterpret_cast<HDC>(wParam), reinterpret_cast<HWND>(lParam));
+        if (br) return reinterpret_cast<INT_PTR>(br);
+        break;
+    }
+    case WM_CLOSE:
+        if (ctx && ctx->remainingSec > 0) {
+            return TRUE; // Mandatory 3-second countdown before dismissal
+        }
+        KillTimer(hwnd, kIfeoCountdownTimerId);
+        EndDialog(hwnd, IDOK);
+        return TRUE;
+    case WM_COMMAND: {
+        WORD id = LOWORD(wParam);
+        if (id == IDOK || id == IDCANCEL) {
+            if (ctx && ctx->remainingSec > 0) {
+                return TRUE;
+            }
+            KillTimer(hwnd, kIfeoCountdownTimerId);
+            EndDialog(hwnd, IDOK);
+            return TRUE;
+        }
+        break;
+    }
+    }
+    return FALSE;
+}
+
+void ShowIfeoCountdownDialog(HWND parent, const AppSettings& settings, const std::wstring& protectedExePath) {
+    IfeoCountdownCtx ctx{ &settings, protectedExePath, 3 };
+    DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_IFEO_COUNTDOWN),
+                    parent, IfeoCountdownDlgProc, reinterpret_cast<LPARAM>(&ctx));
 }
 
 } // namespace taskman

@@ -34,6 +34,11 @@
 #define IDM_OPT_LANG_ES             40119
 #define IDM_OPT_LANG_RU             40120
 
+// Enhance menu & shortcut commands
+#define IDM_ENH_KEEP_EXPLORER       40130
+#define IDM_ENH_REPLACE_TASKMGR     40131
+#define IDM_ENH_RESTORE_TASKMGR     40132
+
 // View menu commands
 #define IDM_VIEW_REFRESH_NOW        40201
 #define IDM_VIEW_SPEED_HIGH         40202
@@ -165,6 +170,16 @@
 #define IDD_ABOUT                   204
 #define IDC_ABOUT_TEXT              2030
 #define IDC_ABOUT_ICON              2031
+
+#define IDD_IFEO_PATH_CHOICE        205
+#define IDC_IFEO_PATH_DESC          2040
+#define IDC_IFEO_CUR_PATH           2041
+#define IDC_IFEO_USE_CURRENT        2042
+#define IDC_IFEO_COPY_TO_DIR        2043
+
+#define IDD_IFEO_COUNTDOWN          206
+#define IDC_IFEO_CD_TEXT            2050
+#define IDC_IFEO_CD_PATH            2051
 
 // Custom window messages
 #define WM_APP_TRAY                 (WM_APP + 1)

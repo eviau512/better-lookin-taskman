@@ -55,6 +55,8 @@ private:
     void UpdateWindowTitle();
     void UpdateAlwaysOnTop();
     void SyncPreLaunchDaemon();
+    void ToggleReplaceTaskManager();
+    void RestoreOriginalTaskManager();
     void UpdatePrimaryActionButton();
     void LayoutFooterButtons();
     void SaveAllTabColumnWidths();
